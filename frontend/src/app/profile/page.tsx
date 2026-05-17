@@ -1,150 +1,47 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/utils/store';
-import { api, UserProfile } from '@/utils/api';
+import { api, UserProfile, ProfileFile, ProfileFileListResponse } from '@/utils/api';
 import Header from '@/components/Header';
 import { usePageUnloadWarning } from '@/hooks/usePageUnloadWarning';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import DataViewerModal from '@/components/DataViewerModal';
 import UnifiedProfileView from '@/components/UnifiedProfileView';
-
-function FileCard({
-    title, type, profile, onUpload, onDelete, onPreview, onViewData, isUploading
-}: {
-    title: string;
-    type: 'resume' | 'linkedin' | 'portfolio';
-    profile: UserProfile | null;
-    onUpload: (file: File, type: 'resume' | 'linkedin' | 'portfolio') => void;
-    onDelete: (type: 'resume' | 'linkedin' | 'portfolio') => void;
-    onPreview: (type: string) => void;
-    onViewData: (title: string, data: unknown) => void;
-    isUploading: boolean;
-}) {
-    const [isDragging, setIsDragging] = useState(false);
-    const typeKey = `${type}_path` as keyof UserProfile;
-    const hasFile = profile && profile[typeKey];
-    const dataKey = `${type}_data` as keyof UserProfile;
-    const hasData = profile && profile[dataKey];
-    const status = hasData ? 'parsed' : hasFile ? 'uploaded' : 'empty';
-
-    const handleDrop = (e: React.DragEvent) => {
-        e.preventDefault();
-        setIsDragging(false);
-        if (e.dataTransfer.files?.[0]) onUpload(e.dataTransfer.files[0], type);
-    };
-
-    return (
-        <div
-            className="rounded-lg p-4"
-            style={{ border: '1px solid var(--border)', background: 'var(--card)' }}
-        >
-            <div className="flex items-center justify-between mb-3">
-                <span className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>{title}</span>
-                <span
-                    className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded"
-                    style={{
-                        background: status === 'parsed' ? 'rgba(34,197,94,0.1)' : status === 'uploaded' ? 'rgba(251,191,36,0.1)' : 'var(--surface)',
-                        color: status === 'parsed' ? '#22c55e' : status === 'uploaded' ? '#fbbf24' : 'var(--text-3)',
-                    }}
-                >
-                    {status === 'parsed' ? 'Ready' : status === 'uploaded' ? 'Uploaded' : 'Missing'}
-                </span>
-            </div>
-
-            {hasFile ? (
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={() => onPreview(type)}
-                        className="flex-1 text-xs py-1.5 rounded-md cursor-pointer transition-colors"
-                        style={{ border: '1px solid var(--border)', color: 'var(--text-2)', background: 'transparent' }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-1)'; }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-2)'; }}
-                    >
-                        Preview
-                    </button>
-                    {hasData && (
-                        <button
-                            onClick={() => onViewData(title, profile[dataKey])}
-                            className="flex-1 text-xs py-1.5 rounded-md cursor-pointer transition-colors"
-                            style={{ border: '1px solid var(--border)', color: 'var(--text-2)', background: 'transparent' }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-1)'; }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-2)'; }}
-                        >
-                            View Data
-                        </button>
-                    )}
-                    <button
-                        onClick={() => onDelete(type)}
-                        className="px-2.5 py-1.5 text-xs rounded-md cursor-pointer transition-colors"
-                        style={{ border: '1px solid transparent', color: '#f87171', background: 'rgba(239,68,68,0.08)' }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.15)'; }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'rgba(239,68,68,0.08)'; }}
-                    >
-                        Remove
-                    </button>
-                </div>
-            ) : (
-                <div
-                    onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
-                    onDragLeave={() => setIsDragging(false)}
-                    onDrop={handleDrop}
-                    className="rounded-md p-4 text-center transition-colors"
-                    style={{
-                        border: `1.5px dashed ${isDragging ? 'var(--accent)' : 'var(--border)'}`,
-                        background: isDragging ? 'var(--accent-dim)' : 'var(--surface)',
-                    }}
-                >
-                    <input
-                        type="file"
-                        id={`file-${type}`}
-                        className="hidden"
-                        accept={type === 'portfolio' ? '.html,.htm' : '.pdf'}
-                        onChange={e => { if (e.target.files?.[0]) onUpload(e.target.files[0], type); }}
-                    />
-                    <label htmlFor={`file-${type}`} className="cursor-pointer">
-                        {isUploading ? (
-                            <p className="text-xs" style={{ color: 'var(--text-3)' }}>Uploading...</p>
-                        ) : (
-                            <>
-                                <p className="text-xs font-medium" style={{ color: 'var(--text-2)' }}>Click to upload</p>
-                                <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>
-                                    {type === 'portfolio' ? 'HTML file' : 'PDF file'}
-                                </p>
-                            </>
-                        )}
-                    </label>
-                </div>
-            )}
-        </div>
-    );
-}
+import ProfileFileList from '@/components/ProfileFileList';
+import FileUploadZone from '@/components/FileUploadZone';
 
 export default function ProfilePage() {
     const router = useRouter();
     const { token, isAuthenticated, _hasHydrated } = useStore();
     const [profile, setProfile] = useState<UserProfile | null>(null);
     const [loading, setLoading] = useState(true);
-    const [uploading, setUploading] = useState<string | null>(null);
     const [unifying, setUnifying] = useState(false);
     const [additionalContext, setAdditionalContext] = useState('');
     const [savingContext, setSavingContext] = useState(false);
     const [contextSaved, setContextSaved] = useState(false);
-    const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; type: 'resume' | 'linkedin' | 'portfolio' | null }>({
-        isOpen: false, type: null
+
+    const [filePage, setFilePage] = useState(1);
+    const [filePageSize, setFilePageSize] = useState(8);
+    const [fileListData, setFileListData] = useState<ProfileFileListResponse | null>(null);
+
+    const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; fileId: string | null; filename: string }>({
+        isOpen: false, fileId: null, filename: ''
     });
     const [dataModal, setDataModal] = useState<{ isOpen: boolean; title: string; data: unknown }>({
         isOpen: false, title: '', data: null
     });
 
-    usePageUnloadWarning(!!uploading || unifying, 'Upload in progress. Leaving will cancel the operation.');
+    const uploading = false;
+    usePageUnloadWarning(unifying, 'Processing in progress. Leaving will cancel the operation.');
 
     useEffect(() => {
         if (!_hasHydrated) return;
         if (!token) { router.push('/'); return; }
         loadProfile();
+        loadFiles();
     }, [token, _hasHydrated]);
 
     const loadProfile = async () => {
@@ -159,38 +56,75 @@ export default function ProfilePage() {
         }
     };
 
-    const handleUpload = async (file: File, type: 'resume' | 'linkedin' | 'portfolio') => {
-        setUploading(type);
+    const loadFiles = useCallback(async (page?: number, pageSize?: number) => {
         try {
-            await api.uploadProfileFile(file, type);
-            await loadProfile();
-        } catch {
-            alert('Upload failed');
-        } finally {
-            setUploading(null);
+            const p = page ?? filePage;
+            const ps = pageSize ?? filePageSize;
+            const data = await api.getProfileFiles(p, ps);
+            setFileListData(data);
+        } catch (error) {
+            console.error(error);
         }
-    };
+    }, [filePage, filePageSize]);
+
+    const handleUploadComplete = useCallback(async () => {
+        await Promise.all([loadProfile(), loadFiles(1, filePageSize)]);
+        setFilePage(1);
+    }, [loadProfile, loadFiles, filePageSize]);
+
+    const handlePageChange = useCallback((newPage: number) => {
+        setFilePage(newPage);
+        loadFiles(newPage, filePageSize);
+    }, [filePageSize, loadFiles]);
+
+    const handlePageSizeChange = useCallback((newSize: number) => {
+        setFilePageSize(newSize);
+        setFilePage(1);
+        loadFiles(1, newSize);
+    }, [loadFiles]);
+
+    const handleDeleteFile = useCallback((fileId: string) => {
+        const file = fileListData?.files.find(f => f.id === fileId);
+        setDeleteModal({
+            isOpen: true,
+            fileId,
+            filename: file?.filename || 'this file',
+        });
+    }, [fileListData]);
 
     const confirmDelete = async () => {
-        if (!deleteModal.type) return;
+        if (!deleteModal.fileId) return;
         try {
-            await api.deleteProfileFile(deleteModal.type);
-            await loadProfile();
+            await api.deleteProfileFileById(deleteModal.fileId);
+            await Promise.all([loadProfile(), loadFiles(filePage, filePageSize)]);
         } catch {
             alert('Failed to delete file');
         } finally {
-            setDeleteModal({ isOpen: false, type: null });
+            setDeleteModal({ isOpen: false, fileId: null, filename: '' });
         }
     };
 
-    const handlePreview = async (type: string) => {
+    const handleEditFile = useCallback(async (fileId: string, data: { file_type?: string; additional_context?: string }) => {
         try {
-            const blob = await api.getProfileFileBlob(type);
+            await api.updateProfileFile(fileId, data);
+            await loadFiles(filePage, filePageSize);
+        } catch {
+            alert('Failed to update file');
+        }
+    }, [loadFiles, filePage, filePageSize]);
+
+    const handlePreview = useCallback(async (fileId: string) => {
+        try {
+            const blob = await api.downloadProfileFile(fileId);
             window.open(URL.createObjectURL(blob), '_blank');
         } catch {
             alert('Failed to preview file.');
         }
-    };
+    }, []);
+
+    const handleViewData = useCallback((title: string, data: unknown) => {
+        setDataModal({ isOpen: true, title, data });
+    }, []);
 
     const handleUnify = async () => {
         setUnifying(true);
@@ -228,14 +162,13 @@ export default function ProfilePage() {
         );
     }
 
-    const hasAnyData = profile?.resume_data || profile?.linkedin_data || profile?.portfolio_data;
+    const hasAnyData = profile?.resume_data || profile?.linkedin_data || profile?.portfolio_data || (fileListData && fileListData.total > 0);
 
     return (
         <main className="min-h-screen" style={{ background: 'var(--bg)' }}>
             <Header />
 
             <div className="max-w-screen-lg mx-auto px-8 py-6">
-                {/* Page header */}
                 <div className="mb-6">
                     <h1 className="text-lg font-semibold" style={{ color: 'var(--text-1)' }}>Profile</h1>
                     <p className="text-sm mt-0.5" style={{ color: 'var(--text-3)' }}>
@@ -243,23 +176,26 @@ export default function ProfilePage() {
                     </p>
                 </div>
 
-                {/* Upload grid */}
-                <div className="grid grid-cols-3 gap-4 mb-6">
-                    <FileCard title="Resume" type="resume" profile={profile} onUpload={handleUpload}
-                        onDelete={t => setDeleteModal({ isOpen: true, type: t })}
-                        onPreview={handlePreview} onViewData={(t, d) => setDataModal({ isOpen: true, title: t, data: d })}
-                        isUploading={uploading === 'resume'} />
-                    <FileCard title="LinkedIn PDF" type="linkedin" profile={profile} onUpload={handleUpload}
-                        onDelete={t => setDeleteModal({ isOpen: true, type: t })}
-                        onPreview={handlePreview} onViewData={(t, d) => setDataModal({ isOpen: true, title: t, data: d })}
-                        isUploading={uploading === 'linkedin'} />
-                    <FileCard title="Portfolio" type="portfolio" profile={profile} onUpload={handleUpload}
-                        onDelete={t => setDeleteModal({ isOpen: true, type: t })}
-                        onPreview={handlePreview} onViewData={(t, d) => setDataModal({ isOpen: true, title: t, data: d })}
-                        isUploading={uploading === 'portfolio'} />
+                <div className="mb-6">
+                    <FileUploadZone onUploadComplete={handleUploadComplete} />
                 </div>
 
-                {/* Additional context */}
+                <div className="mb-6">
+                    <ProfileFileList
+                        files={fileListData?.files || []}
+                        total={fileListData?.total || 0}
+                        page={fileListData?.page || 1}
+                        pageSize={fileListData?.page_size || filePageSize}
+                        totalPages={fileListData?.total_pages || 1}
+                        onPageChange={handlePageChange}
+                        onPageSizeChange={handlePageSizeChange}
+                        onDelete={handleDeleteFile}
+                        onEdit={handleEditFile}
+                        onPreview={handlePreview}
+                        onViewData={handleViewData}
+                    />
+                </div>
+
                 <div className="mb-6 rounded-lg p-4" style={{ border: '1px solid var(--border)', background: 'var(--card)' }}>
                     <div className="flex items-start justify-between mb-2">
                         <div>
@@ -299,7 +235,6 @@ export default function ProfilePage() {
                     />
                 </div>
 
-                {/* Unify action */}
                 <div className="flex items-center justify-between py-4 mb-6" style={{ borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
                     <div>
                         <p className="text-sm font-medium" style={{ color: 'var(--text-1)' }}>
@@ -324,7 +259,6 @@ export default function ProfilePage() {
                     </button>
                 </div>
 
-                {/* Extracted profile preview */}
                 {profile?.extracted_profile && (
                     <div className="mb-6 rounded-lg p-4" style={{ border: '1px solid var(--border)', background: 'var(--card)' }}>
                         <div className="flex items-center justify-between mb-3">
@@ -362,7 +296,6 @@ export default function ProfilePage() {
                     </div>
                 )}
 
-                {/* Unified profile view */}
                 {profile?.unified_profile && (
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
                         <UnifiedProfileView profile={profile.unified_profile} />
@@ -372,10 +305,10 @@ export default function ProfilePage() {
 
             <ConfirmationModal
                 isOpen={deleteModal.isOpen}
-                onClose={() => setDeleteModal({ isOpen: false, type: null })}
+                onClose={() => setDeleteModal({ isOpen: false, fileId: null, filename: '' })}
                 onConfirm={confirmDelete}
                 title="Remove File"
-                message={`Remove your ${deleteModal.type}? This will prevent it from being used in future analyses.`}
+                message={`Remove "${deleteModal.filename}"? This will prevent it from being used in future analyses.`}
                 confirmLabel="Remove"
                 isDestructive={true}
             />

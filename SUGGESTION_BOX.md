@@ -3,3 +3,4 @@
 3. general chat ai introduction that has all this context and can answer questions.
 4. Notification System for Follow Up Reminders, etc. 
 5. Jobs Sorting ****QUICK FIX****
+6. Use chat mode to create a unified profile.

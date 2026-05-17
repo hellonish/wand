@@ -22,6 +22,7 @@ class JobStatus(str, Enum):
     INTERVIEW = "interview"
     OFFER = "offer"
     REJECTED = "rejected"
+    ARCHIVED = "archived"
 
 
 class User(Base):
@@ -35,12 +36,12 @@ class User(Base):
     llm_model = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     
-    # Relationships
     jobs = relationship("Job", back_populates="user", cascade="all, delete-orphan")
     cover_letters = relationship("CoverLetter", back_populates="user", cascade="all, delete-orphan")
     discrepancies = relationship("Discrepancy", back_populates="user", cascade="all, delete-orphan")
     profile = relationship("UserProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
     joblens_sessions = relationship("JobLensSession", back_populates="user", cascade="all, delete-orphan")
+    profile_files = relationship("ProfileFile", back_populates="user", cascade="all, delete-orphan")
 
 
 class Job(Base):
@@ -137,18 +138,35 @@ class UserProfile(Base):
     linkedin_data = Column(JSON, nullable=True)
     portfolio_data = Column(JSON, nullable=True)
 
-    # Unified Result
     unified_profile = Column(JSON, nullable=True)
+    discrepancy_result = Column(JSON, nullable=True)
 
-    # JobLens: extracted structured profile + user-supplied additional context
     extracted_profile = Column(JSON, nullable=True)
     additional_context = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationship
     user = relationship("User", back_populates="profile")
+
+
+class ProfileFile(Base):
+    __tablename__ = "profile_files"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+
+    filename = Column(String, nullable=False)
+    file_path = Column(String, nullable=False)
+    file_type = Column(String(20), nullable=False, default="other")
+    file_size = Column(Integer, nullable=False, default=0)
+    parsed_data = Column(JSON, nullable=True)
+    additional_context = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="profile_files")
 
 
 class JobLensSession(Base):

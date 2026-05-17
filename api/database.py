@@ -42,9 +42,14 @@ def ensure_sqlite_schema(bind_engine):
         if not rows:
             return
         col_names = {r[1] for r in rows}
-        if "custom_prompt" in col_names:
-            return
-        conn.execute(text("ALTER TABLE cover_letters ADD COLUMN custom_prompt TEXT"))
+        if "custom_prompt" not in col_names:
+            conn.execute(text("ALTER TABLE cover_letters ADD COLUMN custom_prompt TEXT"))
+
+        profile_rows = conn.execute(text("PRAGMA table_info(user_profiles)")).fetchall()
+        if profile_rows:
+            profile_cols = {r[1] for r in profile_rows}
+            if "discrepancy_result" not in profile_cols:
+                conn.execute(text("ALTER TABLE user_profiles ADD COLUMN discrepancy_result JSON"))
 
 
 def get_db():

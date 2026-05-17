@@ -18,6 +18,7 @@ class JobStatusEnum(str, Enum):
     interview = "interview"
     offer = "offer"
     rejected = "rejected"
+    archived = "archived"
 
 
 class CoverLetterModeEnum(str, Enum):
@@ -198,6 +199,7 @@ class UserProfileResponse(BaseModel):
 
     # Final Profile
     unified_profile: Optional[Dict[str, Any]] = None
+    discrepancy_result: Optional[Dict[str, Any]] = None
 
     # JobLens
     extracted_profile: Optional[Dict[str, Any]] = None
@@ -212,6 +214,40 @@ class ProfileUploadResponse(BaseModel):
     file_type: str
     filename: str
     parsed_data: Dict[str, Any]
+
+
+class ProfileFileResponse(BaseModel):
+    id: UUID
+    filename: str
+    file_type: str
+    file_size: int
+    parsed_data: Optional[Dict[str, Any]] = None
+    additional_context: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ProfileFileListResponse(BaseModel):
+    files: List[ProfileFileResponse]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class ProfileFileUploadResponse(BaseModel):
+    id: UUID
+    file_type: str
+    filename: str
+    parsed_data: Optional[Dict[str, Any]] = None
+
+
+class ProfileFileUpdate(BaseModel):
+    file_type: Optional[str] = None
+    additional_context: Optional[str] = None
 
 
 class JDToneAnalysisResponse(BaseModel):

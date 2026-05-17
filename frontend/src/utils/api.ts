@@ -152,7 +152,7 @@ export interface ResumeHistoryEntry {
 export interface JobListItem {
     id: string;
     job_posting: JobPosting;
-    status: 'tracked' | 'queued' | 'analyzing' | 'applied' | 'interview' | 'offer' | 'rejected';
+    status: 'tracked' | 'queued' | 'analyzing' | 'applied' | 'interview' | 'offer' | 'rejected' | 'archived';
     final_score?: number;
     company_website?: string;
     joblens_session_id?: string;
@@ -164,7 +164,7 @@ export interface Job {
     id: string;
     job_posting: JobPosting;
     analysis_result?: AnalysisResult;
-    status: 'tracked' | 'queued' | 'analyzing' | 'applied' | 'interview' | 'offer' | 'rejected';
+    status: 'tracked' | 'queued' | 'analyzing' | 'applied' | 'interview' | 'offer' | 'rejected' | 'archived';
     user_notes?: string;
     resume_history?: ResumeHistoryEntry[];
     company_website?: string;
@@ -190,7 +190,7 @@ export interface JobTrackCreate {
 
 // Job update request
 export interface JobUpdate {
-    status?: 'tracked' | 'queued' | 'analyzing' | 'applied' | 'interview' | 'offer' | 'rejected';
+    status?: 'tracked' | 'queued' | 'analyzing' | 'applied' | 'interview' | 'offer' | 'rejected' | 'archived';
     user_notes?: string;
     job_link?: string | null;
 }
@@ -223,6 +223,7 @@ export interface UserProfile {
     linkedin_data?: Record<string, unknown>;
     portfolio_data?: Record<string, unknown>;
     unified_profile?: Record<string, unknown>;
+    discrepancy_result?: Record<string, unknown>;
     extracted_profile?: Record<string, unknown>;
     additional_context?: string;
     updated_at: string;
@@ -232,6 +233,32 @@ export interface ProfileUploadResponse {
     file_type: string;
     filename: string;
     parsed_data: Record<string, unknown>;
+}
+
+export interface ProfileFile {
+    id: string;
+    filename: string;
+    file_type: string;
+    file_size: number;
+    parsed_data?: Record<string, unknown>;
+    additional_context?: string;
+    created_at: string;
+    updated_at: string;
+}
+
+export interface ProfileFileListResponse {
+    files: ProfileFile[];
+    total: number;
+    page: number;
+    page_size: number;
+    total_pages: number;
+}
+
+export interface ProfileFileUploadResponse {
+    id: string;
+    file_type: string;
+    filename: string;
+    parsed_data?: Record<string, unknown>;
 }
 
 // Cover Letter Types
@@ -442,8 +469,58 @@ export const api = {
 
     getProfileFileBlob: async (type: string): Promise<Blob> => {
         const token = getToken();
-        // Use standard fetch to get blob, adding auth header manually
         const res = await fetch(`${API_BASE}/api/profile/file/${type}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {}
+        });
+        if (!res.ok) throw new Error('Failed to download file');
+        return res.blob();
+    },
+
+    uploadProfileFileMulti: async (
+        file: File, type: string, additionalContext?: string
+    ): Promise<ProfileFileUploadResponse> => {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('type', type);
+        if (additionalContext) formData.append('additional_context', additionalContext);
+
+        const token = getToken();
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch(`${API_BASE}/api/profile/upload`, {
+            method: 'POST',
+            headers,
+            body: formData
+        });
+        if (!res.ok) {
+            const error = await res.json().catch(() => ({ detail: 'Request failed' }));
+            throw new Error(error.detail || 'Request failed');
+        }
+        return res.json();
+    },
+
+    getProfileFiles: (page?: number, pageSize?: number, type?: string): Promise<ProfileFileListResponse> => {
+        const params = new URLSearchParams();
+        if (page) params.set('page', String(page));
+        if (pageSize) params.set('page_size', String(pageSize));
+        if (type) params.set('type', type);
+        const qs = params.toString();
+        return fetchWithAuth(`/api/profile/files${qs ? '?' + qs : ''}`);
+    },
+
+    getProfileFileById: (fileId: string): Promise<ProfileFile> =>
+        fetchWithAuth(`/api/profile/files/${fileId}`),
+
+    deleteProfileFileById: (fileId: string): Promise<void> =>
+        fetchWithAuth(`/api/profile/files/${fileId}`, { method: 'DELETE' }),
+
+    updateProfileFile: (fileId: string, data: { file_type?: string; additional_context?: string }): Promise<ProfileFile> =>
+        fetchWithAuth(`/api/profile/files/${fileId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+    downloadProfileFile: async (fileId: string): Promise<Blob> => {
+        const token = getToken();
+        const res = await fetch(`${API_BASE}/api/profile/file/${fileId}/download`, {
             headers: token ? { Authorization: `Bearer ${token}` } : {}
         });
         if (!res.ok) throw new Error('Failed to download file');

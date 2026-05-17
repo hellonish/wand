@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/utils/store';
-import { api, JobListItem, type JobTrackCreate } from '@/utils/api';
+import { api, JobListItem } from '@/utils/api';
 import Header from '@/components/Header';
 import { motion, AnimatePresence } from 'framer-motion';
 import ConfirmationModal from '@/components/ConfirmationModal';
+import AddJobModal from '@/components/AddJobModal';
 
 const STATUS_OPTIONS = [
     { value: 'all', label: 'All' },
@@ -15,6 +16,7 @@ const STATUS_OPTIONS = [
     { value: 'interview', label: 'Interview' },
     { value: 'offer', label: 'Offer' },
     { value: 'rejected', label: 'Rejected' },
+    { value: 'archived', label: 'Archived' },
 ];
 
 const STATUS_META: Record<string, { label: string; dotColor: string; textColor: string }> = {
@@ -25,6 +27,7 @@ const STATUS_META: Record<string, { label: string; dotColor: string; textColor: 
     interview: { label: 'Interview', dotColor: '#f59e0b', textColor: '#f59e0b' },
     offer:     { label: 'Offer',     dotColor: '#22c55e', textColor: '#22c55e' },
     rejected:  { label: 'Rejected',  dotColor: '#52525b', textColor: '#52525b' },
+    archived:  { label: 'Archived',  dotColor: '#a1a1aa', textColor: '#a1a1aa' },
 };
 
 function formatDate(iso: string) {
@@ -76,15 +79,6 @@ export default function JobsPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
     const [showAddModal, setShowAddModal] = useState(false);
-    const [addMode, setAddMode] = useState<'analyze' | 'track'>('analyze');
-    const [jdText, setJdText] = useState('');
-    const [companyWebsite, setCompanyWebsite] = useState('');
-    const [trackTitle, setTrackTitle] = useState('');
-    const [trackCompany, setTrackCompany] = useState('');
-    const [trackUrl, setTrackUrl] = useState('');
-    const [trackLocation, setTrackLocation] = useState('');
-    const [trackStatus, setTrackStatus] = useState('tracked');
-    const [isCreating, setIsCreating] = useState(false);
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -113,56 +107,6 @@ export default function JobsPage() {
         } catch (error) {
             console.error('Failed to delete job:', error);
             throw error;
-        }
-    };
-
-    const closeModal = () => {
-        setShowAddModal(false);
-        setAddMode('analyze');
-        setJdText('');
-        setCompanyWebsite('');
-        setTrackTitle('');
-        setTrackCompany('');
-        setTrackUrl('');
-        setTrackLocation('');
-        setTrackStatus('tracked');
-    };
-
-    const handleCreateJob = async () => {
-        if (!jdText.trim() || isCreating) return;
-        setIsCreating(true);
-        try {
-            const newJob = await api.createJob({
-                jd_text: jdText.trim(),
-                company_website: companyWebsite.trim() || undefined,
-            });
-            closeModal();
-            router.push(`/jobs/${newJob.id}`);
-        } catch (error) {
-            console.error('Failed to create job:', error);
-        } finally {
-            setIsCreating(false);
-        }
-    };
-
-    const handleTrackJob = async () => {
-        if (!trackTitle.trim() || !trackCompany.trim() || isCreating) return;
-        setIsCreating(true);
-        try {
-            const payload: JobTrackCreate = {
-                job_title: trackTitle.trim(),
-                company_name: trackCompany.trim(),
-                job_url: trackUrl.trim() || undefined,
-                location: trackLocation.trim() || undefined,
-                status: trackStatus,
-            };
-            await api.trackJob(payload);
-            closeModal();
-            loadJobs();
-        } catch (error) {
-            console.error('Failed to track job:', error);
-        } finally {
-            setIsCreating(false);
         }
     };
 
@@ -468,256 +412,18 @@ export default function JobsPage() {
             />
 
             {/* Add Job Modal */}
-            <AnimatePresence>
-                {showAddModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            onClick={() => !isCreating && closeModal()}
-                            className="absolute inset-0"
-                            style={{ background: 'rgba(0,0,0,0.6)' }}
-                        />
-                        <motion.div
-                            initial={{ scale: 0.96, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.96, opacity: 0 }}
-                            className="relative w-full max-w-lg rounded-xl flex flex-col"
-                            style={{ background: 'var(--card)', border: '1px solid var(--border)' }}
-                        >
-                            {/* Header */}
-                            <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
-                                <h2 className="text-sm font-semibold" style={{ color: 'var(--text-1)' }}>Add Job</h2>
-                                <button
-                                    onClick={closeModal}
-                                    style={{ color: 'var(--text-3)', background: 'none', border: 'none' }}
-                                    className="text-lg leading-none cursor-pointer"
-                                >×</button>
-                            </div>
-
-                            {/* Mode toggle */}
-                            <div className="px-5 pt-4">
-                                <div
-                                    className="flex rounded-lg p-0.5 w-full"
-                                    style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
-                                >
-                                    {([
-                                        { key: 'analyze', label: 'Analyze with AI', desc: 'Run full 6-step pipeline' },
-                                        { key: 'track', label: 'Just Track', desc: 'Log without analysis' },
-                                    ] as const).map(opt => (
-                                        <button
-                                            key={opt.key}
-                                            onClick={() => setAddMode(opt.key)}
-                                            className="flex-1 flex flex-col items-center py-2 px-3 rounded-md text-xs transition-all cursor-pointer"
-                                            style={{
-                                                background: addMode === opt.key ? 'var(--card)' : 'transparent',
-                                                color: addMode === opt.key ? 'var(--text-1)' : 'var(--text-3)',
-                                                border: addMode === opt.key ? '1px solid var(--border)' : '1px solid transparent',
-                                                fontWeight: addMode === opt.key ? 500 : 400,
-                                            }}
-                                        >
-                                            <span>{opt.label}</span>
-                                            <span className="text-[10px] mt-0.5" style={{ color: addMode === opt.key ? 'var(--text-3)' : 'var(--text-3)', opacity: 0.8 }}>{opt.desc}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Body — Analyze mode */}
-                            {addMode === 'analyze' && (
-                                <div className="px-5 py-4 flex flex-col gap-4">
-                                    <div>
-                                        <label className="block text-xs mb-1.5" style={{ color: 'var(--text-2)' }}>
-                                            Job Description <span style={{ color: 'var(--accent)' }}>*</span>
-                                        </label>
-                                        <textarea
-                                            value={jdText}
-                                            onChange={e => setJdText(e.target.value)}
-                                            placeholder="Paste the full job description here..."
-                                            rows={9}
-                                            className="w-full rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none transition-colors"
-                                            style={{
-                                                background: 'var(--surface)',
-                                                border: '1px solid var(--border)',
-                                                color: 'var(--text-1)',
-                                            }}
-                                            onFocus={e => { (e.target as HTMLTextAreaElement).style.borderColor = 'var(--border-strong)'; }}
-                                            onBlur={e => { (e.target as HTMLTextAreaElement).style.borderColor = 'var(--border)'; }}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs mb-1.5" style={{ color: 'var(--text-2)' }}>
-                                            Company Website <span style={{ color: 'var(--text-3)' }}>(optional)</span>
-                                        </label>
-                                        <input
-                                            type="url"
-                                            value={companyWebsite}
-                                            onChange={e => setCompanyWebsite(e.target.value)}
-                                            placeholder="https://company.com"
-                                            className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors"
-                                            style={{
-                                                background: 'var(--surface)',
-                                                border: '1px solid var(--border)',
-                                                color: 'var(--text-1)',
-                                            }}
-                                            onFocus={e => { (e.target as HTMLInputElement).style.borderColor = 'var(--border-strong)'; }}
-                                            onBlur={e => { (e.target as HTMLInputElement).style.borderColor = 'var(--border)'; }}
-                                        />
-                                        <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>Used to research company culture and engineering environment</p>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Body — Track mode */}
-                            {addMode === 'track' && (
-                                <div className="px-5 py-4 flex flex-col gap-3">
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="block text-xs mb-1.5" style={{ color: 'var(--text-2)' }}>
-                                                Job Title <span style={{ color: 'var(--accent)' }}>*</span>
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={trackTitle}
-                                                onChange={e => setTrackTitle(e.target.value)}
-                                                placeholder="Software Engineer"
-                                                className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors"
-                                                style={{
-                                                    background: 'var(--surface)',
-                                                    border: '1px solid var(--border)',
-                                                    color: 'var(--text-1)',
-                                                }}
-                                                onFocus={e => { (e.target as HTMLInputElement).style.borderColor = 'var(--border-strong)'; }}
-                                                onBlur={e => { (e.target as HTMLInputElement).style.borderColor = 'var(--border)'; }}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs mb-1.5" style={{ color: 'var(--text-2)' }}>
-                                                Company <span style={{ color: 'var(--accent)' }}>*</span>
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={trackCompany}
-                                                onChange={e => setTrackCompany(e.target.value)}
-                                                placeholder="Acme Inc."
-                                                className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors"
-                                                style={{
-                                                    background: 'var(--surface)',
-                                                    border: '1px solid var(--border)',
-                                                    color: 'var(--text-1)',
-                                                }}
-                                                onFocus={e => { (e.target as HTMLInputElement).style.borderColor = 'var(--border-strong)'; }}
-                                                onBlur={e => { (e.target as HTMLInputElement).style.borderColor = 'var(--border)'; }}
-                                            />
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs mb-1.5" style={{ color: 'var(--text-2)' }}>
-                                            Job URL <span style={{ color: 'var(--text-3)' }}>(optional)</span>
-                                        </label>
-                                        <input
-                                            type="url"
-                                            value={trackUrl}
-                                            onChange={e => setTrackUrl(e.target.value)}
-                                            placeholder="https://..."
-                                            className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors"
-                                            style={{
-                                                background: 'var(--surface)',
-                                                border: '1px solid var(--border)',
-                                                color: 'var(--text-1)',
-                                            }}
-                                            onFocus={e => { (e.target as HTMLInputElement).style.borderColor = 'var(--border-strong)'; }}
-                                            onBlur={e => { (e.target as HTMLInputElement).style.borderColor = 'var(--border)'; }}
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="block text-xs mb-1.5" style={{ color: 'var(--text-2)' }}>
-                                                Location <span style={{ color: 'var(--text-3)' }}>(optional)</span>
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={trackLocation}
-                                                onChange={e => setTrackLocation(e.target.value)}
-                                                placeholder="San Francisco, CA"
-                                                className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors"
-                                                style={{
-                                                    background: 'var(--surface)',
-                                                    border: '1px solid var(--border)',
-                                                    color: 'var(--text-1)',
-                                                }}
-                                                onFocus={e => { (e.target as HTMLInputElement).style.borderColor = 'var(--border-strong)'; }}
-                                                onBlur={e => { (e.target as HTMLInputElement).style.borderColor = 'var(--border)'; }}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="block text-xs mb-1.5" style={{ color: 'var(--text-2)' }}>Status</label>
-                                            <select
-                                                value={trackStatus}
-                                                onChange={e => setTrackStatus(e.target.value)}
-                                                className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors cursor-pointer"
-                                                style={{
-                                                    background: 'var(--surface)',
-                                                    border: '1px solid var(--border)',
-                                                    color: 'var(--text-1)',
-                                                }}
-                                            >
-                                                <option value="tracked">Tracked</option>
-                                                <option value="applied">Applied</option>
-                                                <option value="interview">Interview</option>
-                                                <option value="offer">Offer</option>
-                                                <option value="rejected">Rejected</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Footer */}
-                            <div className="flex items-center justify-end gap-2 px-5 py-4" style={{ borderTop: '1px solid var(--border)' }}>
-                                <button
-                                    onClick={closeModal}
-                                    disabled={isCreating}
-                                    className="px-3 py-1.5 text-sm rounded-md cursor-pointer transition-colors"
-                                    style={{ color: 'var(--text-2)', background: 'none', border: '1px solid var(--border)' }}
-                                >
-                                    Cancel
-                                </button>
-                                {addMode === 'analyze' ? (
-                                    <button
-                                        onClick={handleCreateJob}
-                                        disabled={!jdText.trim() || isCreating}
-                                        className="px-4 py-1.5 text-sm rounded-md cursor-pointer transition-colors"
-                                        style={{
-                                            background: jdText.trim() && !isCreating ? 'var(--accent)' : 'var(--surface)',
-                                            color: jdText.trim() && !isCreating ? '#fff' : 'var(--text-3)',
-                                            border: '1px solid transparent',
-                                            cursor: jdText.trim() && !isCreating ? 'pointer' : 'not-allowed',
-                                        }}
-                                    >
-                                        {isCreating ? 'Starting analysis...' : 'Analyze Job'}
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={handleTrackJob}
-                                        disabled={!trackTitle.trim() || !trackCompany.trim() || isCreating}
-                                        className="px-4 py-1.5 text-sm rounded-md cursor-pointer transition-colors"
-                                        style={{
-                                            background: trackTitle.trim() && trackCompany.trim() && !isCreating ? 'var(--accent)' : 'var(--surface)',
-                                            color: trackTitle.trim() && trackCompany.trim() && !isCreating ? '#fff' : 'var(--text-3)',
-                                            border: '1px solid transparent',
-                                            cursor: trackTitle.trim() && trackCompany.trim() && !isCreating ? 'pointer' : 'not-allowed',
-                                        }}
-                                    >
-                                        {isCreating ? 'Adding...' : 'Add Job'}
-                                    </button>
-                                )}
-                            </div>
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
+            <AddJobModal
+                isOpen={showAddModal}
+                onClose={() => setShowAddModal(false)}
+                onJobCreated={(jobId) => {
+                    setShowAddModal(false);
+                    router.push(`/jobs/${jobId}`);
+                }}
+                onJobTracked={() => {
+                    setShowAddModal(false);
+                    loadJobs();
+                }}
+            />
         </main>
     );
 }
