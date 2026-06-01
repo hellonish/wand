@@ -5,7 +5,7 @@ Database Models
 import uuid
 from datetime import datetime
 from enum import Enum
-from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Integer, Float, JSON
+from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Integer, Float, JSON, Boolean
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -33,6 +33,9 @@ class User(Base):
     name = Column(String, nullable=False)
     profile_picture = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    is_deleted = Column(Boolean, default=False, nullable=False)
+    deleted_at = Column(DateTime, nullable=True)
+    onboarding_completed = Column(Boolean, default=False, nullable=False)
     
     jobs = relationship("Job", back_populates="user", cascade="all, delete-orphan")
     cover_letters = relationship("CoverLetter", back_populates="user", cascade="all, delete-orphan")
@@ -161,11 +164,13 @@ class JobLensSession(Base):
     profile_snapshot = Column(JSON, nullable=True)
     job_description = Column(JSON, nullable=True)
     company_intel = Column(JSON, nullable=True)
-    match_analysis = Column(JSON, nullable=True)
+    match_analysis = Column(JSON, nullable=True)   # Phase A: score + evidence
+    resume_actions = Column(JSON, nullable=True)   # Phase B: tailored resume actions
     reachout = Column(JSON, nullable=True)
 
     # Raw inputs for re-running
     raw_jd_text = Column(Text, nullable=True)
+    jd_text_hash = Column(String(32), nullable=True, index=True)
     company_website = Column(String, nullable=True)
 
     # Status

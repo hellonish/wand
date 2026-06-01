@@ -9,11 +9,11 @@ import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 
 const MODES = [
-    { id: 'auto', label: 'Auto-Detect', desc: 'AI analyzes the JD and picks the best tone' },
-    { id: 'storyline', label: 'Storyline', desc: 'Narrative arc driven by your career journey' },
-    { id: 'disruptive', label: 'Disruptive', desc: 'Bold, unconventional, challenges the norm' },
-    { id: 'regular', label: 'Regular', desc: 'Traditional professional and polished' },
-    { id: 'custom', label: 'Custom Prompt', desc: 'Write your intent — AI enhances it' },
+    { id: 'auto', label: 'Auto-Detect', desc: 'Wand reads the job description and selects the tone that best fits this role.' },
+    { id: 'storyline', label: 'Storyline', desc: 'A narrative that connects your career progression to why this role is the right next step.' },
+    { id: 'disruptive', label: 'Disruptive', desc: 'Direct and unconventional — skips formalities, leads with demonstrated impact.' },
+    { id: 'regular', label: 'Regular', desc: 'Standard professional format — structured, composed, and appropriate for any context.' },
+    { id: 'custom', label: 'Custom Prompt', desc: 'Describe the angle you want to take — Wand shapes it into a complete, polished letter.' },
 ];
 
 function QuickCoverLetterContent() {

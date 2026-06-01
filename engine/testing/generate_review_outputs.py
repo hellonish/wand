@@ -10,7 +10,7 @@ from engine.joblens.company_intel import CompanyIntelInput, CompanyIntelResult, 
 from engine.joblens.job_description import JobDescriptionBreakdownResult, break_down_job_description
 from engine.joblens.job_match import match_profile_to_job
 from engine.joblens.reachout import ReachoutInput, ReachoutService, SearchResult, build_static_search_fn
-from engine.xai_client import XAIStructuredClient
+from engine.providers import XAIClient
 from engine.testing.html_report import write_parser_html
 
 ENGINE_DIR = Path(__file__).resolve().parents[1]
@@ -161,7 +161,7 @@ def write_review_outputs(
     if features is None:
         features = ["company_intel", "job_description", "job_match", "profile", "reachout"]
 
-    shared_llm = llm if llm is not None else XAIStructuredClient(model=model)
+    shared_llm = llm if llm is not None else XAIClient(model=model)
     resolved_reachout_llm = reachout_llm if reachout_llm is not None else shared_llm
 
     paths: List[Path] = []

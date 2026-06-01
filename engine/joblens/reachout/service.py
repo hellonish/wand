@@ -1,11 +1,22 @@
 """Reachout discovery orchestration."""
 
+import logging
+import os
+import re
 from typing import Any, Iterable, List, Optional, Sequence
+from urllib.parse import quote_plus
 
+import engine.inference as inference
 from engine.utils import dedupe_warning_strings
-from engine.xai_client import XAIStructuredClient
 
-from .helpers import SearchFn, canonical_linkedin_profile_url, pre_gate_search_results, search_duckduckgo_html
+from .helpers import (
+    SearchFn,
+    canonical_linkedin_profile_url,
+    pre_gate_search_results,
+    search_ddgs,
+    search_duckduckgo_html,
+    search_google_programmable,
+)
 from .models import (
     GatedSearchResult,
     ReachoutCandidate,
@@ -21,7 +32,8 @@ from .models import (
     SearchResult,
     SearchResultStatus,
 )
-from .prompts import build_candidate_validator_messages, build_query_planner_messages
+
+logger = logging.getLogger(__name__)
 
 
 class ReachoutService:
@@ -31,12 +43,10 @@ class ReachoutService:
         self,
         llm: Any = None,
         search_fn: Optional[SearchFn] = None,
-        timeout: int = 15,
     ):
         """Initialize dependencies."""
 
-        self.llm = llm or XAIStructuredClient()
-        self.timeout = timeout
+        self.llm = llm
         self.search_fn = search_fn or self._search
 
     def discover(self, reachout_input: ReachoutInput) -> ReachoutResult:
@@ -53,6 +63,7 @@ class ReachoutService:
                 pre_gated_results=[],
                 candidates=[],
                 rejected_results=self._dedupe_rejections(pre_gate_rejections),
+                linkedin_search_urls=_linkedin_search_urls_from_plan(search_plan, reachout_input),
                 warnings=dedupe_warning_strings(
                     [
                         *planner_warnings,
@@ -71,6 +82,10 @@ class ReachoutService:
             [*pre_gate_rejections, *validation.rejected_results, *reconciliation_rejections]
         )
         warnings = dedupe_warning_strings([*planner_warnings, *validation.warnings, *reconciliation_warnings])
+        # Surface LinkedIn search URLs whenever we couldn't surface direct profiles.
+        linkedin_search_urls = (
+            _linkedin_search_urls_from_plan(search_plan, reachout_input) if not candidates else []
+        )
         return ReachoutResult(
             input=reachout_input,
             search_plan=search_plan,
@@ -78,23 +93,34 @@ class ReachoutService:
             pre_gated_results=pre_gated_results,
             candidates=candidates,
             rejected_results=rejected_results,
+            linkedin_search_urls=linkedin_search_urls,
             warnings=warnings,
         )
 
     def _search(self, query: str, limit: int) -> List[SearchResult]:
-        """Run the default public search provider."""
+        """Try each configured search provider in order, returning the first non-empty result."""
 
-        return search_duckduckgo_html(query, limit, timeout=self.timeout)
+        providers = _build_provider_chain()
+        last_exc: Optional[Exception] = None
+        for name, fn in providers:
+            try:
+                results = fn(query, limit)
+                if results:
+                    logger.info("reachout search: provider=%s returned %d results for query=%r", name, len(results), query[:80])
+                    return results
+                logger.info("reachout search: provider=%s returned 0 results for query=%r", name, query[:80])
+            except Exception as exc:
+                logger.warning("reachout search: provider=%s failed: %s", name, exc)
+                last_exc = exc
+        logger.warning("reachout search: all providers exhausted with no results for query=%r", query[:80])
+        if last_exc:
+            raise last_exc
+        return []
 
     def _plan_queries(self, reachout_input: ReachoutInput) -> tuple[ReachoutSearchPlan, List[str]]:
         """Create a targeted public-search plan with the structured LLM."""
 
-        response = self.llm.complete(
-            response_model=ReachoutQueryPlanLLMResponse,
-            messages=build_query_planner_messages(reachout_input),
-            temperature=0.0,
-            max_tokens=12000,
-        )
+        response = inference.plan_reachout_queries(self.llm, reachout_input)
         return self._with_school_queries(reachout_input, response.search_plan), dedupe_warning_strings(response.warnings)
 
     def _with_school_queries(self, reachout_input: ReachoutInput, plan: ReachoutSearchPlan) -> ReachoutSearchPlan:
@@ -172,9 +198,17 @@ class ReachoutService:
         """Execute generated queries."""
 
         results: List[SearchResult] = []
+        last_exc: Optional[Exception] = None
         per_query_limit = max(5, min(10, target_count))
         for query in sorted(queries, key=lambda item: item.priority):
-            results.extend(self.search_fn(query.query, per_query_limit))
+            try:
+                results.extend(self.search_fn(query.query, per_query_limit))
+            except Exception as exc:
+                last_exc = exc
+        # If every query failed and we have nothing, surface the error so the
+        # step is marked failed (retryable) rather than silently completing empty.
+        if not results and last_exc is not None:
+            raise last_exc
         return results
 
     def _validate_candidates(
@@ -185,12 +219,7 @@ class ReachoutService:
     ) -> ReachoutValidationResult:
         """Validate and normalize pre-gated search results with the structured LLM."""
 
-        response = self.llm.complete(
-            response_model=ReachoutCandidateValidationLLMResponse,
-            messages=build_candidate_validator_messages(reachout_input, search_plan, gated_results),
-            temperature=0.0,
-            max_tokens=18000,
-        )
+        response = inference.validate_reachout_candidates(self.llm, reachout_input, search_plan, gated_results)
         warnings = dedupe_warning_strings([*response.validation.warnings, *response.warnings])
         return response.validation.model_copy(update={"warnings": warnings})
 
@@ -298,6 +327,71 @@ class ReachoutService:
             seen.add(key)
             result.append(value)
         return result
+
+
+def _build_provider_chain() -> List[tuple[str, SearchFn]]:
+    """Return ordered list of (name, search_fn) to try for each query.
+
+    Priority from env var REACHOUT_SEARCH_PROVIDERS (comma-separated):
+      ddgs, duckduckgo_html, google_cse
+    Defaults to: ddgs,duckduckgo_html,google_cse
+    """
+
+    order = os.environ.get("REACHOUT_SEARCH_PROVIDERS", "ddgs,duckduckgo_html,google_cse")
+    chain: List[tuple[str, SearchFn]] = []
+    for name in [p.strip() for p in order.split(",") if p.strip()]:
+        if name == "ddgs":
+            chain.append(("ddgs", search_ddgs))
+        elif name == "duckduckgo_html":
+            chain.append(("duckduckgo_html", search_duckduckgo_html))
+        elif name == "google_cse":
+            if os.environ.get("GOOGLE_CSE_API_KEY") and os.environ.get("GOOGLE_CSE_ID"):
+                chain.append(("google_cse", search_google_programmable))
+            else:
+                logger.debug("reachout: google_cse skipped — GOOGLE_CSE_API_KEY/GOOGLE_CSE_ID not set")
+    return chain
+
+
+def _linkedin_search_urls_from_plan(
+    search_plan: ReachoutSearchPlan,
+    reachout_input: ReachoutInput,
+) -> List[str]:
+    """Convert search plan queries into actionable LinkedIn People Search URLs.
+
+    These are fallback links for when automated search is blocked — the user
+    can open them directly and LinkedIn will show matching profiles.
+    """
+
+    urls: List[str] = []
+    seen: set[str] = set()
+
+    for sq in search_plan.queries[:8]:
+        keywords = _query_to_linkedin_keywords(sq.query)
+        if not keywords:
+            continue
+        url = f"https://www.linkedin.com/search/results/people/?keywords={quote_plus(keywords)}"
+        if url not in seen:
+            seen.add(url)
+            urls.append(url)
+
+    # Always include a broad company people search as the first fallback.
+    company = search_plan.company_name or reachout_input.company_name
+    if company:
+        broad_url = f"https://www.linkedin.com/search/results/people/?keywords={quote_plus(company)}"
+        if broad_url not in seen:
+            urls.insert(0, broad_url)
+
+    return urls[:6]
+
+
+def _query_to_linkedin_keywords(query: str) -> str:
+    """Strip site: directives and convert a search query to LinkedIn keyword terms."""
+
+    # Remove site:linkedin.com/in and similar directives
+    clean = re.sub(r'site:\S+', '', query, flags=re.IGNORECASE)
+    # Remove surrounding quotes from individual terms but keep the words
+    clean = re.sub(r'"([^"]+)"', r'\1', clean)
+    return " ".join(clean.split())
 
 
 def discover_reachout_contacts(

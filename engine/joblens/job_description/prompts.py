@@ -15,10 +15,23 @@ def build_job_description_breakdown_messages(job: JobDescriptionInput) -> List[D
     ]
 
 
+def _strip_source_phrases_from_schema(schema: dict) -> dict:
+    """Remove source_phrases from all $defs to reduce schema and output token cost."""
+    for def_schema in schema.get("$defs", {}).values():
+        def_schema.get("properties", {}).pop("source_phrases", None)
+        required = def_schema.get("required", [])
+        if "source_phrases" in required:
+            def_schema["required"] = [r for r in required if r != "source_phrases"]
+    return schema
+
+
 def _system_prompt() -> str:
     """Return the job breakdown contract."""
 
-    schema = json.dumps(JobDescriptionBreakdown.model_json_schema(), indent=2)
+    schema = json.dumps(
+        _strip_source_phrases_from_schema(JobDescriptionBreakdown.model_json_schema()),
+        separators=(',', ':'),
+    )
     return f"""
 You are `job_description_breakdown`, the first module in a hybrid job-to-profile matching pipeline.
 
@@ -31,8 +44,6 @@ Output contract:
 - Do not invent facts. If a field is absent or not strongly implied, leave it empty.
 - Never create placeholder strings such as "N/A", "Unknown", "Not specified", "various", or "not provided".
 - Do not include salary estimates. Capture salary only if the posting explicitly states it.
-- Preserve exact source phrases in `source_phrases` for every important extracted item.
-- `source_phrases` should be short direct phrases or sentences from the posting that prove the field.
 - Normalize only mechanically: trim whitespace, split comma/pipe/slash-separated lists, choose obvious canonical names, and dedupe exact repeats.
 - Do not collapse must-have and nice-to-have requirements into one list.
 - Do not overfit to keyword stuffing. Keep meaningful technical, responsibility, domain, and constraint signals.

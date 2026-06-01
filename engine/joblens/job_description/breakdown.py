@@ -2,6 +2,7 @@
 
 from typing import Any, Optional
 
+import engine.inference as inference
 from engine.utils import dedupe_warning_strings
 
 from .models import (
@@ -9,7 +10,6 @@ from .models import (
     JobDescriptionBreakdownResult,
     JobDescriptionInput,
 )
-from .prompts import build_job_description_breakdown_messages
 
 
 class JobDescriptionBreaker:
@@ -19,7 +19,7 @@ class JobDescriptionBreaker:
         """Initialize with a required structured-output LLM client."""
 
         if llm is None:
-            raise ValueError("Job description breakdown requires an LLM client. Use XAIStructuredClient for X.AI.")
+            raise ValueError("Job description breakdown requires an LLM client.")
         self.llm = llm
 
     def break_down(self, job_text: str, source_id: Optional[str] = None) -> JobDescriptionBreakdownResult:
@@ -29,12 +29,7 @@ class JobDescriptionBreaker:
             raise ValueError("Job description text cannot be empty.")
 
         job_input = JobDescriptionInput(text=job_text, source_id=source_id)
-        response = self.llm.complete(
-            response_model=JobDescriptionBreakdownLLMResponse,
-            messages=build_job_description_breakdown_messages(job_input),
-            temperature=0.0,
-            max_tokens=18000,
-        )
+        response = inference.break_down_job_description(self.llm, job_input)
         return JobDescriptionBreakdownResult(
             input=job_input,
             breakdown=response.breakdown,

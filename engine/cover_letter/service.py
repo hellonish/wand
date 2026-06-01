@@ -2,16 +2,9 @@
 
 from typing import Any, Dict, List, Optional
 
+import engine.inference as inference
 from .models import CoverLetter, EnhancedPrompt, JDToneAnalysis
-from .prompts import (
-    JD_TONE_SYSTEM_PROMPT,
-    JD_TONE_USER_TEMPLATE,
-    MODE_PROMPTS,
-    MODE_TEMPERATURES,
-    PROMPT_ENHANCER_SYSTEM_PROMPT,
-    PROMPT_ENHANCER_USER_TEMPLATE,
-    SUPPORTED_MODES,
-)
+from .prompts import MODE_PROMPTS, MODE_TEMPERATURES, SUPPORTED_MODES
 
 _SUPPORTED_MODE_SET = frozenset(SUPPORTED_MODES)
 _SUPPORTED_MODE_LABEL = ", ".join(SUPPORTED_MODES)
@@ -67,14 +60,11 @@ class CoverLetterService:
             company_news,
             company_intel,
         )
-        result = self._llm.complete(
-            response_model=CoverLetter,
-            messages=[
-                {"role": "system", "content": self._resolve_system_prompt(actual_mode, enhanced)},
-                {"role": "user", "content": f"Generate a cover letter:\n\n{context}"},
-            ],
-            temperature=MODE_TEMPERATURES[actual_mode],
-            max_tokens=4096,
+        result = inference.write_cover_letter(
+            self._llm,
+            self._resolve_system_prompt(actual_mode, enhanced),
+            context,
+            actual_mode,
         )
 
         result.mode = actual_mode
@@ -95,24 +85,7 @@ class CoverLetterService:
     def _analyze_jd_tone(self, job_posting: Dict) -> JDToneAnalysis:
         """Analyze a JD and recommend a generation mode."""
 
-        user_msg = JD_TONE_USER_TEMPLATE.format(
-            job_title=job_posting.get("job_title", ""),
-            company_name=job_posting.get("company_name", ""),
-            company_about=job_posting.get("company_about", ""),
-            job_description=job_posting.get("job_description", ""),
-            required=job_posting.get("required_qualifications", []),
-            technical=job_posting.get("technical_skills", []),
-            keywords=job_posting.get("job_keywords", []),
-        )
-        return self._llm.complete(
-            response_model=JDToneAnalysis,
-            messages=[
-                {"role": "system", "content": JD_TONE_SYSTEM_PROMPT},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.3,
-            max_tokens=1024,
-        )
+        return inference.analyze_jd_tone(self._llm, job_posting)
 
     def _enhance_prompt(
         self,
@@ -122,27 +95,7 @@ class CoverLetterService:
     ) -> EnhancedPrompt:
         """Enhance a rough custom prompt before cover-letter generation."""
 
-        user_msg = PROMPT_ENHANCER_USER_TEMPLATE.format(
-            rough_prompt=rough_prompt,
-            job_title=job_posting.get("job_title", ""),
-            company_name=job_posting.get("company_name", ""),
-            company_about=job_posting.get("company_about", ""),
-            job_description=job_posting.get("job_description", ""),
-            required=job_posting.get("required_qualifications", []),
-            technical=job_posting.get("technical_skills", []),
-            soft=job_posting.get("soft_skills", []),
-            keywords=job_posting.get("job_keywords", []),
-            profile=unified_profile,
-        )
-        return self._llm.complete(
-            response_model=EnhancedPrompt,
-            messages=[
-                {"role": "system", "content": PROMPT_ENHANCER_SYSTEM_PROMPT},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.5,
-            max_tokens=2048,
-        )
+        return inference.enhance_cover_letter_prompt(self._llm, rough_prompt, job_posting, unified_profile)
 
     @staticmethod
     def _validate_mode(mode: str) -> None:

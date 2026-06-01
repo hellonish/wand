@@ -107,6 +107,7 @@ async def upload_file(
                 filename=file.filename or f"profile{file_ext}",
                 content_type=file.content_type or "application/octet-stream",
                 source_label=source_label,
+                llm=get_llm("profile"),
             )
         except Exception as e:
             if os.path.exists(file_path):

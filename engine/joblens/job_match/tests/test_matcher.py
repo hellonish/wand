@@ -196,7 +196,7 @@ def test_review_outputs_accept_falsey_llm(tmp_path, monkeypatch):
     def fail_xai_client(**kwargs):
         raise AssertionError("X.AI client should not be constructed")
 
-    monkeypatch.setattr(generate_review_outputs, "XAIStructuredClient", fail_xai_client)
+    monkeypatch.setattr(generate_review_outputs, "XAIClient", fail_xai_client)
     llm = FalseyFakeLLM(_minimal_match_response())
 
     written_paths = generate_review_outputs.write_review_outputs(output_dir=tmp_path, llm=llm, features=["job_match"])

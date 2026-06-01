@@ -7,7 +7,7 @@ import requests
 import trafilatura
 from bs4 import BeautifulSoup
 
-from engine.xai_client import XAIStructuredClient
+import engine.inference as inference
 from engine.utils import dedupe_warning_strings
 
 from .helpers import (
@@ -32,7 +32,6 @@ from .models import (
     FetchedCompanyPage,
     PageType,
 )
-from .prompts import build_company_intel_messages
 
 
 class CompanyIntelService:
@@ -157,18 +156,12 @@ class CompanyIntelService:
     ) -> CompanyIntelResult:
         """Extract normalized company intelligence from fetched pages."""
 
-        llm = self.llm or XAIStructuredClient()
-        response = llm.complete(
-            response_model=CompanyIntelLLMResponse,
-            messages=build_company_intel_messages(
-                company_input,
-                pages,
-                response_schema=CompanyIntelLLMResponse.model_json_schema(),
-                response_contract_name="CompanyIntelLLMResponse",
-            ),
-            temperature=0.0,
-            max_tokens=24000,
-        )
+        llm = self.llm
+        response = inference.extract_company_intel(llm, company_input, pages)
         warnings = dedupe_warning_strings([*response.result.warnings, *response.warnings])
-        source_pages = list(response.result.source_pages or pages)
-        return response.result.model_copy(update={"source_pages": source_pages, "warnings": warnings})
+        # source_pages are excluded from the LLM output schema to avoid token explosion.
+        # Reconstruct the full CompanyIntelResult by combining LLM fields with original pages.
+        result_data = response.result.model_dump()
+        result_data["source_pages"] = [p.model_dump() for p in pages]
+        result_data["warnings"] = warnings
+        return CompanyIntelResult.model_validate(result_data)

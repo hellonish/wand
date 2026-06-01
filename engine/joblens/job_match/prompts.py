@@ -1,24 +1,52 @@
 """Detailed prompts for LLM-assisted profile-to-JD matching."""
 
 import json
-from typing import Dict, List
+from typing import Any, Dict, List, Mapping, Optional
 
-from .models import JobMatchRequest, JobMatchResult
+from .models import (
+    JobMatchLLMResponse,
+    JobMatchRequest,
+    JobMatchResult,
+    JobMatchScore,
+    JobMatchScoreLLMResponse,
+    ResumeActions,
+    ResumeActionsLLMResponse,
+)
 
 
-def build_job_match_messages(request: JobMatchRequest) -> List[Dict[str, str]]:
+def build_job_match_messages(
+    request: JobMatchRequest,
+    response_schema: Optional[Mapping[str, Any]] = None,
+    response_contract_name: str = "JobMatchLLMResponse",
+) -> List[Dict[str, str]]:
     """Build messages that ask the LLM for a typed match result."""
 
     return [
-        {"role": "system", "content": _system_prompt()},
-        {"role": "user", "content": _user_prompt(request)},
+        {"role": "system", "content": _system_prompt(response_schema, response_contract_name)},
+        {"role": "user", "content": _user_prompt(request, response_contract_name)},
     ]
 
 
-def _system_prompt() -> str:
+def _drop_source_phrases(obj: Any) -> None:
+    """Recursively remove source_phrases keys from a serialized dict/list in-place."""
+    if isinstance(obj, dict):
+        obj.pop("source_phrases", None)
+        for v in obj.values():
+            _drop_source_phrases(v)
+    elif isinstance(obj, list):
+        for item in obj:
+            _drop_source_phrases(item)
+
+
+def _system_prompt(
+    response_schema: Optional[Mapping[str, Any]] = None,
+    response_contract_name: str = "JobMatchLLMResponse",
+) -> str:
     """Return the matching contract."""
 
-    schema = json.dumps(JobMatchResult.model_json_schema(), indent=2)
+    # Use the wrapper schema (JobMatchLLMResponse) so the LLM knows to return
+    # {"result": {...}, "warnings": [...]} — not the inner JobMatchResult fields at root.
+    schema = json.dumps(response_schema or JobMatchLLMResponse.model_json_schema(), separators=(',', ':'))
     return f"""
 You are `job_match`, the second module in a hybrid job-to-profile matching pipeline.
 
@@ -103,12 +131,17 @@ Structured output schema:
 """.strip()
 
 
-def _user_prompt(request: JobMatchRequest) -> str:
+def _user_prompt(
+    request: JobMatchRequest,
+    response_contract_name: str = "JobMatchLLMResponse",
+) -> str:
     """Return profile and JD source material for matching."""
 
+    jd_data = request.job_description.model_dump(mode="json")
+    _drop_source_phrases(jd_data)
     payload = {
         "profile": request.profile.model_dump(mode="json"),
-        "job_description": request.job_description.model_dump(mode="json"),
+        "job_description": jd_data,
     }
     if request.base_resume_text is not None:
         payload["base_resume_text"] = request.base_resume_text
@@ -117,7 +150,187 @@ def _user_prompt(request: JobMatchRequest) -> str:
         [
             "Match this UnifiedProfile against this JobDescriptionBreakdownResult.",
             "Use the supplied structured components, comparison targets, and resume tailoring signals.",
-            "Return a structured JobMatchResult only.",
-            json.dumps(payload, indent=2),
+            f"Return a structured {response_contract_name} with `result` (the JobMatchResult) and `warnings` (any output-level warnings).",
+            json.dumps(payload),
         ]
     )
+
+
+# ─── Phase A: scoring only ────────────────────────────────────────────────────
+
+def build_job_match_score_messages(
+    request: JobMatchRequest,
+    response_schema: Optional[Mapping[str, Any]] = None,
+) -> List[Dict[str, str]]:
+    """Phase A — score, evidence, gaps. No resume actions."""
+    schema = json.dumps(response_schema or JobMatchScoreLLMResponse.model_json_schema(), separators=(',', ':'))
+    system = f"""
+You are `job_match_score`, the scoring phase of a two-phase job-match pipeline.
+
+Your responsibility:
+Produce a complete fit assessment — score, evidence, gaps — but do NOT generate resume actions.
+Resume actions are handled in a separate phase with full context from this output.
+
+Output contract:
+- Return only data fitting JobMatchScoreLLMResponse: {{ result: JobMatchScore, warnings: [] }}
+- JobMatchScore has: summary, score_components, constraints, skill_matches,
+  responsibility_matches, domain_matches, warnings.
+- Do NOT include update_actions, replace_actions, delete_actions, or selected_actions.
+- Do not invent evidence. If profile evidence is absent, mark the gap.
+
+{_shared_scoring_rules()}
+
+Structured output schema (JobMatchScoreLLMResponse):
+{schema}
+""".strip()
+
+    jd_data = request.job_description.model_dump(mode="json")
+    _drop_source_phrases(jd_data)
+    payload = {
+        "profile": request.profile.model_dump(mode="json"),
+        "job_description": jd_data,
+    }
+    if request.base_resume_text is not None:
+        payload["base_resume_text"] = request.base_resume_text
+
+    user = "\n".join([
+        "Score this UnifiedProfile against this JobDescriptionBreakdownResult.",
+        "Return JobMatchScoreLLMResponse with result (JobMatchScore) and warnings.",
+        json.dumps(payload),
+    ])
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+# ─── Phase B: resume actions ──────────────────────────────────────────────────
+
+def build_resume_actions_messages(
+    request: JobMatchRequest,
+    score: "JobMatchScore",
+    response_schema: Optional[Mapping[str, Any]] = None,
+) -> List[Dict[str, str]]:
+    """Phase B — resume actions grounded in Phase A score + gaps."""
+    schema = json.dumps(response_schema or ResumeActionsLLMResponse.model_json_schema(), separators=(',', ':'))
+
+    has_candidates = bool(request.resume_candidates)
+    has_single = request.base_resume_text is not None and not has_candidates
+
+    if has_candidates:
+        resume_instructions = f"""
+Resume selection (MANDATORY — do this first before generating any actions):
+- You are given {len(request.resume_candidates)} resume file(s) in `resume_candidates`.
+- Read ALL resume files, then select the ONE that best fits this specific job description
+  based on skill relevance, experience framing, and keyword alignment with the JD.
+- You MUST set `selected_resume_filename` to the exact filename string of the chosen resume.
+  Omitting or nulling `selected_resume_filename` is an error.
+- Every `target_text` value MUST be an exact quote or close paraphrase of a real line
+  from the SELECTED resume's text. Do NOT pull `target_text` from profile fields,
+  the match_score, or any other source.
+- `suggested_text` must be grounded in evidence from the match_score and the selected resume
+  — no invented metrics.
+
+Length preservation (STRICT):
+- The total bullet/line count of the resume MUST stay the same after all actions are applied.
+- Every update_action rewrites one existing line — no net change in count.
+- Every replace_action swaps one existing line for a stronger one — no net change in count.
+- delete_actions remove lines. If you add net-new content via an update/replace that expands
+  to more lines than the original, you MUST include a delete_action to compensate.
+- Do NOT suggest adding new sections or new bullet points without removing an equal number.
+""".strip()
+    elif has_single:
+        resume_instructions = """
+Resume text usage:
+- `base_resume_text` is the authoritative source. Quote or closely paraphrase actual lines
+  so the candidate knows exactly what to change.
+- `suggested_text` must be grounded in real profile evidence — no invented metrics.
+
+Length preservation (STRICT):
+- The total bullet/line count of the resume MUST stay the same after all actions are applied.
+- update_action and replace_action each rewrite ONE existing line.
+- If any action adds more lines than it removes, include compensating delete_actions.
+""".strip()
+    else:
+        resume_instructions = """
+Resume text usage:
+- No resume file provided. Target profile evidence fields for `target_text`.
+- `suggested_text` must be grounded in real profile evidence — no invented metrics.
+""".strip()
+
+    system = f"""
+You are `resume_actions`, the tailoring phase of a two-phase job-match pipeline.
+
+Your responsibility:
+Given the completed match score and gap analysis, generate specific, evidence-backed
+resume actions that help the candidate tailor their resume for this job.
+
+{resume_instructions}
+
+Output contract:
+- Return only data fitting ResumeActionsLLMResponse: {{ result: ResumeActions, warnings: [] }}
+- ResumeActions has: selected_resume_filename, update_actions, replace_actions, delete_actions, selected_actions, warnings.
+- Do not add fake metrics. If no metric exists, use impact wording without a number.
+- selected_actions must be a concise prioritised subset across update/replace/delete.
+
+{_shared_action_rules()}
+
+Structured output schema (ResumeActionsLLMResponse):
+{schema}
+""".strip()
+
+    jd_data = request.job_description.model_dump(mode="json")
+    _drop_source_phrases(jd_data)
+
+    if has_candidates:
+        # Omit `profile` so target_text can only be grounded in the selected resume's text.
+        # The match_score already carries all the evidence and gap context needed.
+        payload: dict = {
+            "job_description": jd_data,
+            "match_score": score.model_dump(mode="json"),
+            "resume_candidates": [
+                {"filename": c.filename, "text": c.text}
+                for c in request.resume_candidates
+            ],
+        }
+    else:
+        payload = {
+            "profile": request.profile.model_dump(mode="json"),
+            "job_description": jd_data,
+            "match_score": score.model_dump(mode="json"),
+        }
+        if has_single:
+            payload["base_resume_text"] = request.base_resume_text
+
+    user = "\n".join([
+        "Generate resume actions for this candidate based on the match score and gap analysis.",
+        "Return ResumeActionsLLMResponse with result (ResumeActions) and warnings.",
+        json.dumps(payload),
+    ])
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+# ─── Shared rule fragments ────────────────────────────────────────────────────
+
+def _shared_scoring_rules() -> str:
+    return """
+Scoring rubric (100-point total):
+- hard_constraints: gate risk only, do not add points.
+- technical_skills: 30 pts. responsibilities: 25 pts. project_evidence: 15 pts.
+- domain_relevance: 10 pts. seniority_and_ownership: 10 pts.
+- education_and_logistics: 5 pts. keyword_coverage: 5 pts.
+
+Match bands: 85-100 strong | 70-84 good | 55-69 partial | below 55 weak
+Evidence strength: 0 none | 1 keyword | 2 adjacent | 3 direct project | 4 professional | 5 production+metric
+Skill match levels: EXACT | ALIAS | ADJACENT | TRANSFERABLE | MISSING
+""".strip()
+
+
+def _shared_action_rules() -> str:
+    return """
+Resume action rules:
+- update_actions: existing item is relevant but underspecified.
+- replace_actions: lower-value item should be swapped for stronger profile evidence.
+- delete_actions: content category likely wastes space for this JD.
+- selected_actions: concise prioritised subset across all action types.
+- suggested_text: resume-ready bullet only when supported by profile evidence.
+- jd_alignment: quote or name the JD requirement the action supports.
+- expected_score_impact: qualitative, e.g. "high technical-skill impact".
+""".strip()

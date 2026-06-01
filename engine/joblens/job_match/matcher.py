@@ -4,14 +4,14 @@ from typing import Any, List, Optional
 
 from pydantic import Field
 
+import engine.inference as inference
 from engine.profile.models import UnifiedProfile
+from engine.providers import XAIClient
 from engine.utils import dedupe_warning_strings
-from engine.xai_client import XAIStructuredClient
 
 from engine.joblens.job_description.models import JobDescriptionBreakdownResult
 
 from .models import JobMatchLLMResponse, JobMatchRequest, JobMatchResult, StrictJobMatchModel
-from .prompts import build_job_match_messages
 
 
 class JobMatcher:
@@ -21,7 +21,7 @@ class JobMatcher:
         """Initialize with a required structured-output LLM client."""
 
         if llm is None:
-            raise ValueError("Job matching requires an LLM client. Use XAIStructuredClient for X.AI.")
+            raise ValueError("Job matching requires an LLM client.")
         self.llm = llm
 
     def match(
@@ -37,12 +37,7 @@ class JobMatcher:
             job_description=job_description,
             base_resume_text=base_resume_text,
         )
-        response = self.llm.complete(
-            response_model=JobMatchLLMResponse,
-            messages=build_job_match_messages(request),
-            temperature=0.0,
-            max_tokens=24000,
-        )
+        response = inference.match_profile_to_job(self.llm, request)
         warnings = dedupe_warning_strings([*response.result.warnings, *response.warnings])
         return response.result.model_copy(update={"warnings": warnings})
 
@@ -73,6 +68,6 @@ def match_profile_to_job_with_xai(
     return match_profile_to_job(
         profile=profile,
         job_description=job_description,
-        llm=XAIStructuredClient(model=model),
+        llm=XAIClient(model=model),
         base_resume_text=base_resume_text,
     )

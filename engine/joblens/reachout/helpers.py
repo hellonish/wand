@@ -2,6 +2,7 @@
 
 import os
 import re
+import time
 from typing import Callable, Dict, Iterable, List, Optional
 from urllib.parse import parse_qs, unquote, urlparse, urlunparse
 
@@ -144,13 +145,14 @@ def search_ddgs(
     region: str = "us-en",
     safesearch: str = "moderate",
     timelimit: Optional[str] = None,
+    retries: int = 3,
+    backoff: float = 2.0,
 ) -> List[SearchResult]:
-    """Return DDGS text search results."""
+    """Return DDGS text search results, with retries on transient network errors."""
 
-    if client is None:
-        from ddgs import DDGS
+    from ddgs import DDGS
+    from ddgs.exceptions import DDGSException
 
-        client = DDGS()
     kwargs = {
         "max_results": max(limit, 0),
         "region": region,
@@ -158,25 +160,35 @@ def search_ddgs(
     }
     if timelimit:
         kwargs["timelimit"] = timelimit
-    items = client.text(query, **kwargs) or []
-    results: List[SearchResult] = []
-    for index, item in enumerate(items[:limit], start=1):
-        url = item.get("href") or item.get("url") or item.get("link") or ""
-        title = item.get("title") or ""
-        snippet = item.get("body") or item.get("snippet") or item.get("description")
-        if not url or not title:
-            continue
-        results.append(
-            SearchResult(
-                title=title,
-                url=url,
-                snippet=snippet,
-                query=query,
-                rank=index,
-                source="ddgs",
-            )
-        )
-    return results
+
+    last_exc: Exception = RuntimeError("No attempts made")
+    for attempt in range(retries):
+        try:
+            c = client if client is not None else DDGS()
+            items = c.text(query, **kwargs) or []
+            results: List[SearchResult] = []
+            for index, item in enumerate(items[:limit], start=1):
+                url = item.get("href") or item.get("url") or item.get("link") or ""
+                title = item.get("title") or ""
+                snippet = item.get("body") or item.get("snippet") or item.get("description")
+                if not url or not title:
+                    continue
+                results.append(
+                    SearchResult(
+                        title=title,
+                        url=url,
+                        snippet=snippet,
+                        query=query,
+                        rank=index,
+                        source="ddgs",
+                    )
+                )
+            return results
+        except DDGSException as exc:
+            last_exc = exc
+            if attempt < retries - 1:
+                time.sleep(backoff ** attempt)
+    raise last_exc
 
 
 def search_google_programmable(

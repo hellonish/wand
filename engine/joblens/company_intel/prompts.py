@@ -3,7 +3,7 @@
 import json
 from typing import Any, Dict, List, Mapping, Sequence
 
-from .models import CompanyIntelInput, CompanyIntelResult, FetchedCompanyPage
+from .models import CompanyIntelInput, CompanyIntelLLMResponse, FetchedCompanyPage
 
 
 def build_company_intel_messages(
@@ -26,7 +26,7 @@ def _system_prompt(
 ) -> str:
     """Return the company-intel extraction contract."""
 
-    schema = json.dumps(response_schema or CompanyIntelResult.model_json_schema(), indent=2)
+    schema = json.dumps(response_schema or CompanyIntelLLMResponse.model_json_schema(), separators=(',', ':'))
     return f"""
 You are `company_intel`, a research module that converts official company pages into normalized company and engineering intelligence.
 
@@ -51,8 +51,7 @@ Extraction workflow:
 4. Extract technical signals: languages, frameworks, infrastructure, cloud, databases, data/AI/ML, security, reliability, developer tools, and architecture patterns.
 5. Extract engineering culture: quality bar, open-source posture, developer experience, collaboration style, working style, and values.
 6. Extract hiring signals: careers URL, locations, remote/work-mode hints, team structure, values or interview signals.
-7. Include the fetched pages in `source_pages` without rewriting their text.
-8. Add warnings for weak crawl coverage, missing about page, missing engineering blog, or pages that look like generic blog indexes only.
+7. Add warnings for weak crawl coverage, missing about page, missing engineering blog, or pages that look like generic blog indexes only.
 
 Page interpretation rules:
 - `homepage` often supports identity, product, audience, and scale.
@@ -90,6 +89,6 @@ def _user_prompt(
             "Extract unified company intelligence from these official company pages.",
             "Use source-page evidence for important claims.",
             f"Return a structured {response_contract_name} only.",
-            json.dumps(payload, indent=2),
+            json.dumps(payload),
         ]
     )

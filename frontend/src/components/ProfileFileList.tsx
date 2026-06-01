@@ -1,28 +1,13 @@
 'use client';
 
-import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { ProfileFile } from '@/utils/api';
-
-const TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-    resume: { bg: 'var(--accent-dim)', text: 'var(--accent)', border: 'var(--accent-border)' },
-    linkedin: { bg: 'var(--accent-dim)', text: 'var(--accent)', border: 'var(--accent-border)' },
-    portfolio: { bg: 'var(--accent-dim)', text: 'var(--accent)', border: 'var(--accent-border)' },
-    other: { bg: 'var(--surface)', text: 'var(--text-3)', border: 'var(--border)' },
-};
+import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import { ProfileFile, type ProfileFileType } from '@/utils/api';
 
 function formatFileSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatDate(dateStr: string): string {
-    try {
-        return new Date(dateStr).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-    } catch {
-        return dateStr;
-    }
 }
 
 interface ProfileFileListProps {
@@ -34,7 +19,7 @@ interface ProfileFileListProps {
     onPageChange: (page: number) => void;
     onPageSizeChange: (size: number) => void;
     onDelete: (fileId: string) => void;
-    onEdit: (fileId: string, data: { file_type?: string; additional_context?: string }) => void;
+    onEdit: (fileId: string, data: { file_type?: ProfileFileType; additional_context?: string }) => void;
     onPreview: (fileId: string) => void;
     onViewData: (title: string, data: unknown) => void;
 }
@@ -44,14 +29,36 @@ export default function ProfileFileList({
     onPageChange, onPageSizeChange, onDelete, onEdit, onPreview, onViewData,
 }: ProfileFileListProps) {
     const [editingId, setEditingId] = useState<string | null>(null);
-    const [editType, setEditType] = useState('');
+    const [editType, setEditType] = useState<ProfileFileType>('other');
     const [editContext, setEditContext] = useState('');
-    const [hoveredBtn, setHoveredBtn] = useState<string | null>(null);
+    const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+    const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
+    const btnRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+
+    // Close on scroll so the menu doesn't drift away from its anchor
+    useEffect(() => {
+        if (!openMenuId) return;
+        const close = () => setOpenMenuId(null);
+        window.addEventListener('scroll', close, true);
+        return () => window.removeEventListener('scroll', close, true);
+    }, [openMenuId]);
+
+    const openMenu = (id: string) => {
+        const btn = btnRefs.current[id];
+        if (!btn) return;
+        const rect = btn.getBoundingClientRect();
+        setMenuPos({
+            top: rect.bottom + 4,
+            right: window.innerWidth - rect.right,
+        });
+        setOpenMenuId(id);
+    };
 
     const startEdit = (f: ProfileFile) => {
         setEditingId(f.id);
         setEditType(f.file_type);
         setEditContext(f.additional_context || '');
+        setOpenMenuId(null);
     };
 
     const saveEdit = () => {
@@ -62,219 +69,246 @@ export default function ProfileFileList({
 
     if (files.length === 0) {
         return (
-            <div className="rounded-lg p-8 text-center" style={{ border: '1px solid var(--border)', background: 'var(--card)' }}>
-                <p className="text-sm" style={{ color: 'var(--text-3)' }}>No files uploaded yet. Upload your first file above.</p>
+            <div style={{ padding: '32px 16px', textAlign: 'center' }}>
+                <p style={{ fontSize: 13, color: 'var(--text-3)' }}>No files uploaded yet. Upload your first file above.</p>
             </div>
         );
     }
 
     return (
         <div>
-            <AnimatePresence mode="wait">
-                <motion.div
-                    key={page}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.15 }}
-                    className="space-y-2"
-                >
-                    {files.map((f) => {
-                        const tc = TYPE_COLORS[f.file_type] || TYPE_COLORS.other;
-                        const isEditing = editingId === f.id;
+            {files.map((f, i) => {
+                const ext = f.filename.split('.').pop()?.toUpperCase() ?? '—';
+                const isEditing = editingId === f.id;
+                const isLast = i === files.length - 1;
+                const isParsed = !!f.parsed_data;
 
-                        return (
-                            <div
-                                key={f.id}
-                                className="rounded-lg p-3 flex items-center gap-3"
-                                style={{ border: '1px solid var(--border)', background: 'var(--card)' }}
-                            >
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-sm font-medium truncate" style={{ color: 'var(--text-1)' }}>
+                return (
+                    <div
+                        key={f.id}
+                        style={{
+                            display: 'grid',
+                            gridTemplateColumns: '34px 1fr auto',
+                            gap: 12,
+                            alignItems: 'center',
+                            padding: '12px 14px',
+                            borderBottom: isLast ? 'none' : '1px solid var(--border-soft)',
+                            position: 'relative',
+                        }}
+                    >
+                        {/* File type icon */}
+                        <div style={{
+                            width: 30, height: 36, borderRadius: 'var(--radius-xs)',
+                            background: 'var(--bg-tint)', border: '1px solid var(--border-soft)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontFamily: 'var(--font-mono)', fontSize: 9, color: 'var(--text-2)', fontWeight: 600,
+                            flexShrink: 0,
+                        }}>
+                            {ext}
+                        </div>
+
+                        {/* Main info */}
+                        <div style={{ minWidth: 0 }}>
+                            {isEditing ? (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    <select
+                                        value={editType}
+                                        onChange={e => setEditType(e.target.value as ProfileFileType)}
+                                        style={{ height: 26, padding: '0 6px', fontSize: 12, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', cursor: 'pointer' }}
+                                    >
+                                        <option value="resume">Resume</option>
+                                        <option value="linkedin">LinkedIn</option>
+                                        <option value="portfolio">Portfolio</option>
+                                        <option value="other">Other</option>
+                                    </select>
+                                    <input
+                                        type="text"
+                                        value={editContext}
+                                        onChange={e => setEditContext(e.target.value)}
+                                        placeholder="Context…"
+                                        style={{ height: 26, padding: '0 8px', fontSize: 12, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', outline: 'none' }}
+                                    />
+                                </div>
+                            ) : (
+                                <>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2, flexWrap: 'wrap' }}>
+                                        <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '55%' }}>
                                             {f.filename}
                                         </span>
-                                        <span
-                                            className="text-xs uppercase tracking-wider px-1.5 py-0.5 rounded flex-shrink-0"
-                                            style={{ background: tc.bg, color: tc.text, border: `1px solid ${tc.border}` }}
-                                        >
+                                        {/* Type pill */}
+                                        <span style={{
+                                            height: 20, padding: '0 7px', display: 'inline-flex', alignItems: 'center',
+                                            fontSize: 10.5, fontWeight: 500,
+                                            border: '1px solid var(--border)', borderRadius: 'var(--radius-xs)',
+                                            color: 'var(--text-3)', background: 'transparent', flexShrink: 0,
+                                        }}>
                                             {f.file_type}
                                         </span>
-                                        {f.parsed_data && (
-                                            <span
-                                                className="text-xs uppercase tracking-wider px-1.5 py-0.5 rounded flex-shrink-0"
-                                                style={{ background: 'var(--success-dim)', color: 'var(--success)' }}
-                                            >
-                                                Parsed
+                                        {/* Parsed pill */}
+                                        {isParsed ? (
+                                            <span style={{
+                                                height: 20, padding: '0 7px', display: 'inline-flex', alignItems: 'center',
+                                                fontSize: 10.5, fontWeight: 500, flexShrink: 0,
+                                                background: 'var(--strong-soft)', color: 'var(--strong)',
+                                                borderRadius: 'var(--radius-xs)',
+                                            }}>
+                                                parsed
+                                            </span>
+                                        ) : (
+                                            <span style={{
+                                                height: 20, padding: '0 7px', display: 'inline-flex', alignItems: 'center',
+                                                fontSize: 10.5, fontWeight: 500, flexShrink: 0,
+                                                background: 'var(--partial-soft)', color: 'var(--partial)',
+                                                borderRadius: 'var(--radius-xs)',
+                                            }}>
+                                                <span className="wand-pulse">parsing</span>
                                             </span>
                                         )}
                                     </div>
-                                    <div className="flex items-center gap-3 text-xs" style={{ color: 'var(--text-3)' }}>
-                                        <span>{formatFileSize(f.file_size)}</span>
-                                        <span>{formatDate(f.created_at)}</span>
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center gap-1.5 flex-shrink-0">
-                                    {isEditing ? (
-                                        <>
-                                            <select
-                                                value={editType}
-                                                onChange={e => setEditType(e.target.value)}
-                                                className="text-xs px-2 py-1 rounded-md"
-                                                style={{
-                                                    background: 'var(--surface)',
-                                                    border: '1px solid var(--border)',
-                                                    color: 'var(--text-1)',
-                                                }}
-                                            >
-                                                <option value="resume">Resume</option>
-                                                <option value="linkedin">LinkedIn</option>
-                                                <option value="portfolio">Portfolio</option>
-                                                <option value="other">Other</option>
-                                            </select>
-                                            <input
-                                                type="text"
-                                                value={editContext}
-                                                onChange={e => setEditContext(e.target.value)}
-                                                placeholder="Context..."
-                                                className="text-xs px-2 py-1 rounded-md w-28"
-                                                style={{
-                                                    background: 'var(--surface)',
-                                                    border: '1px solid var(--border)',
-                                                    color: 'var(--text-1)',
-                                                }}
-                                            />
-                                            <button
-                                                onClick={saveEdit}
-                                                className="text-xs px-2 py-1 rounded-md cursor-pointer"
-                                                style={{
-                                                    background: 'var(--accent-dim)',
-                                                    color: 'var(--accent)',
-                                                    border: '1px solid var(--accent-border)',
-                                                }}
-                                            >
-                                                Save
-                                            </button>
-                                            <button
-                                                onClick={() => setEditingId(null)}
-                                                className="text-xs px-2 py-1 rounded-md cursor-pointer"
-                                                style={{ border: '1px solid var(--border)', color: 'var(--text-3)', background: 'transparent' }}
-                                            >
-                                                Cancel
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <ActionButton
-                                                label="Preview"
-                                                id={`preview-${f.id}`}
-                                                hoveredBtn={hoveredBtn}
-                                                setHoveredBtn={setHoveredBtn}
-                                                onClick={() => onPreview(f.id)}
-                                            />
-                                            {f.parsed_data && (
-                                                <ActionButton
-                                                    label="View Data"
-                                                    id={`data-${f.id}`}
-                                                    hoveredBtn={hoveredBtn}
-                                                    setHoveredBtn={setHoveredBtn}
-                                                    onClick={() => onViewData(f.filename, f.parsed_data)}
-                                                />
-                                            )}
-                                            <ActionButton
-                                                label="Edit"
-                                                id={`edit-${f.id}`}
-                                                hoveredBtn={hoveredBtn}
-                                                setHoveredBtn={setHoveredBtn}
-                                                onClick={() => startEdit(f)}
-                                            />
-                                            <button
-                                                onClick={() => onDelete(f.id)}
-                                                className="px-2 py-1 text-xs rounded-md cursor-pointer transition-colors"
-                                                style={{ border: '1px solid transparent', color: 'var(--danger)', background: 'var(--danger-dim)' }}
-                                                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--danger-dim)'; }}
-                                                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--danger-dim)'; }}
-                                            >
-                                                Remove
-                                            </button>
-                                        </>
+                                    {f.additional_context && (
+                                        <div style={{ fontSize: 11.5, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {f.additional_context}
+                                        </div>
                                     )}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </motion.div>
-            </AnimatePresence>
+                                </>
+                            )}
+                        </div>
 
-            <div className="flex items-center justify-between mt-4">
-                <div className="flex items-center gap-2">
-                    <span className="text-xs" style={{ color: 'var(--text-3)' }}>
-                        Page {page} of {totalPages} ({total} file{total !== 1 ? 's' : ''})
+                        {/* Actions */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                            {isEditing ? (
+                                <>
+                                    <button
+                                        onClick={saveEdit}
+                                        style={{ height: 26, padding: '0 10px', fontSize: 12, fontWeight: 500, borderRadius: 'var(--radius-sm)', background: 'var(--accent-soft)', color: 'var(--accent-ink)', border: '1px solid transparent', cursor: 'pointer' }}
+                                    >Save</button>
+                                    <button
+                                        onClick={() => setEditingId(null)}
+                                        style={{ height: 26, padding: '0 8px', fontSize: 12, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', color: 'var(--text-3)', background: 'transparent', cursor: 'pointer' }}
+                                    >Cancel</button>
+                                </>
+                            ) : (
+                                <>
+                                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-3)', marginRight: 4 }}>
+                                        {formatFileSize(f.file_size)}
+                                    </span>
+                                    {/* Preview */}
+                                    <button
+                                        onClick={() => onPreview(f.id)}
+                                        title="Preview"
+                                        style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-soft)', background: 'transparent', cursor: 'pointer', color: 'var(--text-3)' }}
+                                    >
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+                                            <polyline points="15 3 21 3 21 9" />
+                                            <line x1="10" y1="14" x2="21" y2="3" />
+                                        </svg>
+                                    </button>
+                                    {/* Kebab menu */}
+                                    <button
+                                        ref={el => { btnRefs.current[f.id] = el; }}
+                                        onClick={() => openMenuId === f.id ? setOpenMenuId(null) : openMenu(f.id)}
+                                        style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-soft)', background: openMenuId === f.id ? 'var(--bg-tint)' : 'transparent', cursor: 'pointer', color: 'var(--text-3)' }}
+                                    >
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                            <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+                                        </svg>
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                );
+            })}
+
+            {/* Kebab dropdown — rendered in a portal so it escapes overflow:hidden parents */}
+            {openMenuId && menuPos && typeof document !== 'undefined' && createPortal(
+                <>
+                    <div onClick={() => setOpenMenuId(null)} style={{ position: 'fixed', inset: 0, zIndex: 1000 }} />
+                    <div style={{
+                        position: 'fixed',
+                        top: menuPos.top,
+                        right: menuPos.right,
+                        zIndex: 1001,
+                        background: 'var(--surface)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius)',
+                        boxShadow: 'var(--shadow-2)',
+                        minWidth: 168,
+                        overflow: 'hidden',
+                    }}>
+                        {(() => {
+                            const f = files.find(x => x.id === openMenuId);
+                            if (!f) return null;
+                            const isParsed = !!f.parsed_data;
+                            return (
+                                <>
+                                    <MenuItem onClick={() => startEdit(f)}>Edit context</MenuItem>
+                                    {isParsed && (
+                                        <MenuItem onClick={() => { onViewData(f.filename, f.parsed_data); setOpenMenuId(null); }}>
+                                            View extracted data
+                                        </MenuItem>
+                                    )}
+                                    <MenuItem onClick={() => { onPreview(f.id); setOpenMenuId(null); }}>Download</MenuItem>
+                                    <MenuItem danger onClick={() => { onDelete(f.id); setOpenMenuId(null); }}>Delete</MenuItem>
+                                </>
+                            );
+                        })()}
+                    </div>
+                </>,
+                document.body,
+            )}
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', borderTop: '1px solid var(--border-soft)' }}>
+                    <span style={{ fontSize: 11.5, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+                        {page} / {totalPages} ({total} files)
                     </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <select
+                            value={pageSize}
+                            onChange={e => onPageSizeChange(Number(e.target.value))}
+                            style={{ height: 26, padding: '0 6px', fontSize: 12, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text-2)', cursor: 'pointer' }}
+                        >
+                            <option value={4}>4 / page</option>
+                            <option value={8}>8 / page</option>
+                            <option value={12}>12 / page</option>
+                        </select>
+                        <button
+                            onClick={() => onPageChange(page - 1)}
+                            disabled={page <= 1}
+                            style={{ height: 26, padding: '0 10px', fontSize: 12, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', color: 'var(--text-2)', background: 'transparent', cursor: page <= 1 ? 'not-allowed' : 'pointer', opacity: page <= 1 ? 0.4 : 1, transition: 'all 140ms' }}
+                        >←</button>
+                        <button
+                            onClick={() => onPageChange(page + 1)}
+                            disabled={page >= totalPages}
+                            style={{ height: 26, padding: '0 10px', fontSize: 12, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', color: 'var(--text-2)', background: 'transparent', cursor: page >= totalPages ? 'not-allowed' : 'pointer', opacity: page >= totalPages ? 0.4 : 1, transition: 'all 140ms' }}
+                        >→</button>
+                    </div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <select
-                        value={pageSize}
-                        onChange={e => onPageSizeChange(Number(e.target.value))}
-                        className="text-xs px-2 py-1 rounded-md"
-                        style={{
-                            background: 'var(--surface)',
-                            border: '1px solid var(--border)',
-                            color: 'var(--text-2)',
-                        }}
-                    >
-                        <option value={4}>4 per page</option>
-                        <option value={8}>8 per page</option>
-                        <option value={12}>12 per page</option>
-                    </select>
-                    <button
-                        onClick={() => onPageChange(page - 1)}
-                        disabled={page <= 1}
-                        className="text-xs px-3 py-1.5 rounded-md cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                        style={{ border: '1px solid var(--border)', color: 'var(--text-2)', background: 'transparent' }}
-                        onMouseEnter={e => { if (page > 1) (e.currentTarget as HTMLButtonElement).style.background = 'var(--hover)'; }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
-                    >
-                        Previous
-                    </button>
-                    <button
-                        onClick={() => onPageChange(page + 1)}
-                        disabled={page >= totalPages}
-                        className="text-xs px-3 py-1.5 rounded-md cursor-pointer transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                        style={{ border: '1px solid var(--border)', color: 'var(--text-2)', background: 'transparent' }}
-                        onMouseEnter={e => { if (page < totalPages) (e.currentTarget as HTMLButtonElement).style.background = 'var(--hover)'; }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
-                    >
-                        Next
-                    </button>
-                </div>
-            </div>
+            )}
         </div>
     );
 }
 
-function ActionButton({ label, id, hoveredBtn, setHoveredBtn, onClick }: {
-    label: string;
-    id: string;
-    hoveredBtn: string | null;
-    setHoveredBtn: (id: string | null) => void;
-    onClick: () => void;
-}) {
-    const isHovered = hoveredBtn === id;
+function MenuItem({ children, onClick, danger }: { children: React.ReactNode; onClick: () => void; danger?: boolean }) {
+    const [hovered, setHovered] = useState(false);
     return (
         <button
             onClick={onClick}
-            onMouseEnter={() => setHoveredBtn(id)}
-            onMouseLeave={() => setHoveredBtn(null)}
-            className="text-xs px-2 py-1 rounded-md cursor-pointer transition-colors"
+            onMouseEnter={() => setHovered(true)}
+            onMouseLeave={() => setHovered(false)}
             style={{
-                border: '1px solid var(--border)',
-                color: isHovered ? 'var(--text-1)' : 'var(--text-2)',
-                background: 'transparent',
+                display: 'block', width: '100%', textAlign: 'left',
+                padding: '8px 14px', fontSize: 12.5, cursor: 'pointer',
+                background: hovered ? 'var(--bg-tint)' : 'transparent',
+                color: danger ? 'var(--weak)' : 'var(--text)',
+                border: 'none', borderBottom: '1px solid var(--border-soft)',
+                transition: 'background 120ms',
             }}
         >
-            {label}
+            {children}
         </button>
     );
 }

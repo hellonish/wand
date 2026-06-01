@@ -240,8 +240,25 @@ class CompanyIntelResult(StrictCompanyIntelModel):
     warnings: List[str] = Field(default_factory=list)
 
 
+class CompanyIntelLLMResult(StrictCompanyIntelModel):
+    """LLM-visible subset of CompanyIntelResult — source_pages excluded to avoid token explosion.
+
+    The service fills source_pages from the original fetched pages after the LLM call.
+    """
+
+    input: CompanyIntelInput
+    identity: CompanyIdentity = Field(default_factory=CompanyIdentity)
+    product_signals: List[ProductSignal] = Field(default_factory=list)
+    engineering_presence: EngineeringPresence = Field(default_factory=EngineeringPresence)
+    technical_signals: TechnicalSignals = Field(default_factory=TechnicalSignals)
+    engineering_culture: EngineeringCultureSignals = Field(default_factory=EngineeringCultureSignals)
+    hiring_signals: HiringSignals = Field(default_factory=HiringSignals)
+    extraction_notes: List[str] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+
+
 class CompanyIntelLLMResponse(StrictCompanyIntelModel):
     """Structured response expected from the company-intel LLM."""
 
-    result: CompanyIntelResult
+    result: CompanyIntelLLMResult
     warnings: List[str] = Field(default_factory=list)

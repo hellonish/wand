@@ -22,6 +22,11 @@ from engine.joblens.reachout import (
     search_ddgs,
     search_duckduckgo_html,
 )
+from engine.joblens.reachout.service import (
+    _build_provider_chain,
+    _linkedin_search_urls_from_plan,
+    _query_to_linkedin_keywords,
+)
 
 
 class FakeLLM:
@@ -372,6 +377,149 @@ def test_duckduckgo_html_provider_maps_results_without_credentials():
     assert results[0].source == "duckduckgo_html"
     assert results[0].url == "https://www.linkedin.com/in/jane-carter-123456"
     assert results[0].snippet == "Technical Recruiter at Atom Investors."
+
+
+def test_provider_chain_falls_back_when_first_provider_fails():
+    """Service falls back to the next provider when the first raises an exception."""
+
+    calls = []
+
+    def failing_provider(query, limit):
+        calls.append(("fail", query))
+        raise RuntimeError("provider down")
+
+    def succeeding_provider(query, limit):
+        calls.append(("ok", query))
+        return [
+            SearchResult(
+                title="Jane Carter - Technical Recruiter - Atom Investors | LinkedIn",
+                url="https://www.linkedin.com/in/jane-carter-123456",
+                snippet="Technical Recruiter at Atom Investors.",
+                query=query,
+                rank=1,
+                source="fallback",
+            )
+        ]
+
+    reachout_input = _input()
+    plan = _plan()
+    planner_response = ReachoutQueryPlanLLMResponse(search_plan=plan)
+    validation_response = ReachoutCandidateValidationLLMResponse(
+        validation=ReachoutValidationResult(
+            accepted_candidates=[
+                ReachoutCandidate(
+                    full_name="Jane Carter",
+                    source_result_id="gated_1",
+                    current_title="Technical Recruiter",
+                    company="Atom Investors",
+                    profile_url="https://www.linkedin.com/in/jane-carter-123456",
+                    profile_source=ProfileSource.LINKEDIN,
+                    likely_persona=ReachoutPersona.TECHNICAL_RECRUITER,
+                    confidence=0.94,
+                    confidence_band=ConfidenceBand.HIGH,
+                    matched_query=plan.queries[0].query,
+                    source_title="Jane Carter - Technical Recruiter - Atom Investors | LinkedIn",
+                )
+            ]
+        )
+    )
+    llm = FakeLLM([planner_response, validation_response])
+
+    # Provide a search_fn that wraps both providers in priority order
+    def chained_search(query, limit):
+        try:
+            return failing_provider(query, limit)
+        except Exception:
+            return succeeding_provider(query, limit)
+
+    result = ReachoutService(llm=llm, search_fn=chained_search).discover(reachout_input)
+
+    assert result.candidates[0].full_name == "Jane Carter"
+    assert ("fail", plan.queries[0].query) in calls
+    assert ("ok", plan.queries[0].query) in calls
+
+
+def test_linkedin_search_urls_generated_when_no_candidates():
+    """LinkedIn search URLs are populated in the fallback case (no direct profiles found)."""
+
+    reachout_input = _input()
+    plan = _plan()
+    llm = FakeLLM([ReachoutQueryPlanLLMResponse(search_plan=plan)])
+    # Return only a non-person result so pre-gate rejects everything
+    search_fn = build_static_search_fn({plan.queries[0].query: [_search_results()[1]]})
+
+    result = ReachoutService(llm=llm, search_fn=search_fn).discover(reachout_input)
+
+    assert result.candidates == []
+    assert len(result.linkedin_search_urls) > 0
+    assert all(url.startswith("https://www.linkedin.com/search/results/people/") for url in result.linkedin_search_urls)
+    # Broad company search should always be included
+    assert any("Atom+Investors" in url or "Atom Investors" in url for url in result.linkedin_search_urls)
+
+
+def test_linkedin_search_urls_empty_when_candidates_found():
+    """linkedin_search_urls is empty when direct profile candidates were successfully found."""
+
+    reachout_input = _input()
+    plan = _plan()
+    planner_response = ReachoutQueryPlanLLMResponse(search_plan=plan)
+    validation_response = ReachoutCandidateValidationLLMResponse(
+        validation=ReachoutValidationResult(
+            accepted_candidates=[
+                ReachoutCandidate(
+                    full_name="Jane Carter",
+                    source_result_id="gated_1",
+                    current_title="Technical Recruiter",
+                    company="Atom Investors",
+                    profile_url="https://www.linkedin.com/in/jane-carter-123456",
+                    profile_source=ProfileSource.LINKEDIN,
+                    likely_persona=ReachoutPersona.TECHNICAL_RECRUITER,
+                    confidence=0.94,
+                    confidence_band=ConfidenceBand.HIGH,
+                    matched_query=plan.queries[0].query,
+                    source_title="Jane Carter - Technical Recruiter - Atom Investors | LinkedIn",
+                )
+            ]
+        )
+    )
+    llm = FakeLLM([planner_response, validation_response])
+    search_fn = build_static_search_fn({plan.queries[0].query: [_search_results()[0]]})
+
+    result = ReachoutService(llm=llm, search_fn=search_fn).discover(reachout_input)
+
+    assert len(result.candidates) == 1
+    assert result.linkedin_search_urls == []
+
+
+def test_query_to_linkedin_keywords_strips_site_directive():
+    """Remove site: directives and unquote terms for LinkedIn keyword search."""
+
+    keywords = _query_to_linkedin_keywords('site:linkedin.com/in "Atom Investors" "technical recruiter"')
+    assert "site:" not in keywords
+    assert "Atom Investors" in keywords
+    assert "technical recruiter" in keywords
+
+
+def test_build_provider_chain_respects_env_var(monkeypatch):
+    """REACHOUT_SEARCH_PROVIDERS env var controls which providers are included."""
+
+    monkeypatch.setenv("REACHOUT_SEARCH_PROVIDERS", "duckduckgo_html")
+    monkeypatch.delenv("GOOGLE_CSE_API_KEY", raising=False)
+    chain = _build_provider_chain()
+    names = [name for name, _ in chain]
+    assert names == ["duckduckgo_html"]
+
+
+def test_build_provider_chain_excludes_google_cse_without_keys(monkeypatch):
+    """google_cse is silently excluded when API keys are not set."""
+
+    monkeypatch.setenv("REACHOUT_SEARCH_PROVIDERS", "ddgs,google_cse")
+    monkeypatch.delenv("GOOGLE_CSE_API_KEY", raising=False)
+    monkeypatch.delenv("GOOGLE_CSE_ID", raising=False)
+    chain = _build_provider_chain()
+    names = [name for name, _ in chain]
+    assert "google_cse" not in names
+    assert "ddgs" in names
 
 
 def test_sample_outputs_validate_against_schema():

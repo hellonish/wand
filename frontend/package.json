@@ -6,14 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit --incremental false"
   },
   "dependencies": {
-    "jspdf": "^3.0.0",
     "framer-motion": "^12.4.0",
+    "jspdf": "^3.0.0",
     "next": "^15.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
+    "react-image-crop": "^11.0.10",
     "react-markdown": "^10.0.0",
     "zustand": "^5.0.0"
   },

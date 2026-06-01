@@ -2,11 +2,11 @@
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Union
 
 from pydantic import BaseModel
 
-from engine.xai_client import DEFAULT_XAI_MODEL, XAIStructuredClient
+from engine.providers import DEFAULT_DEEPSEEK_MODEL, DEFAULT_XAI_MODEL, DeepSeekClient, XAIClient
 
 
 CONFIG_PATH = Path(__file__).with_name("llm_config.json")
@@ -82,13 +82,13 @@ def resolve_llm_settings(task: str = "default") -> LLMRuntimeSettings:
     )
 
 
-def get_llm(task: str = "default") -> XAIStructuredClient:
+def get_llm(task: str = "default") -> Union[XAIClient, DeepSeekClient]:
     """Create the engine-compatible LLM client for a task."""
 
     return build_llm_from_settings(resolve_llm_settings(task))
 
 
-def build_llm_from_settings(settings: LLMRuntimeSettings | Dict[str, Any]) -> XAIStructuredClient:
+def build_llm_from_settings(settings: LLMRuntimeSettings | Dict[str, Any]) -> Union[XAIClient, DeepSeekClient]:
     """Create an LLM client from server-side config.
 
     API keys are intentionally not stored in app config or user settings. The
@@ -97,6 +97,8 @@ def build_llm_from_settings(settings: LLMRuntimeSettings | Dict[str, Any]) -> XA
 
     runtime = settings if isinstance(settings, LLMRuntimeSettings) else LLMRuntimeSettings.model_validate(settings)
     provider = (runtime.provider or "grok").lower()
-    if provider not in {"grok", "xai"}:
-        raise ValueError(f"Unsupported LLM provider: {runtime.provider}")
-    return XAIStructuredClient(model=runtime.model)
+    if provider == "deepseek":
+        return DeepSeekClient(model=runtime.model)
+    if provider in {"grok", "xai"}:
+        return XAIClient(model=runtime.model)
+    raise ValueError(f"Unsupported LLM provider: {runtime.provider}")

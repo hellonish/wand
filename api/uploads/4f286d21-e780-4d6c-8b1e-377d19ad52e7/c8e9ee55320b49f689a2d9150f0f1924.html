@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nishant Sharma — AI Engineer</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <div class="wrapper">
+        <aside class="sidebar">
+            <img src="profile.png" alt="Nishant Sharma" class="profile-photo">
+            <h1>Nishant Sharma</h1>
+            <p class="title">AI Engineer · Builder · Researcher</p>
+            <p class="title">M.S. Computer Engineering<br>New York University '26</p>
+            <p class="affiliation">Teaching Assistant — Machine Learning<br>NYU Tandon</p>
+
+            <nav class="nav-links">
+                <a href="#about">About</a>
+                <a href="#projects">Projects</a>
+                <a href="#research">Research</a>
+                <a href="#experience">Experience</a>
+                <a href="#skills">Skills</a>
+                <a href="#more">Teaching</a>
+            </nav>
+
+            <div class="contact">
+                <h3>Contact</h3>
+                <p><a href="mailto:hellonishantsh@gmail.com">hellonishantsh@gmail.com</a></p>
+                <p>New York, NY</p>
+                <p><em>Open to roles · May 2026</em></p>
+                <div class="social-links">
+                    <a href="sharma_nishant_portfolio.pdf" target="_blank">Resume</a>
+                    <a href="https://github.com/hellonish" target="_blank">GitHub</a>
+                    <a href="https://linkedin.com/in/nishantsh20/" target="_blank">LinkedIn</a>
+                    <a href="https://hellonishant.medium.com/" target="_blank">Medium</a>
+                </div>
+            </div>
+        </aside>
+
+        <main class="content">
+
+            <!-- ABOUT -->
+            <section id="about">
+                <h2>About</h2>
+                <p>
+                    I am an AI engineer who has spent the past year immersed in agentic AI — not just building with it,
+                    but understanding where it actually fails and designing systems that fail less. I started with
+                    experiments, went through a lot of dead ends, read a lot of research, and slowly built the
+                    intuition about what makes production retrieval and reasoning systems trustworthy rather than just
+                    impressive.
+                </p>
+                <p>
+                    That year of work became <strong>Singularity</strong> — a production multi-agent research platform
+                    I shipped solo in 13 days. The speed was only possible because the hard decisions had already been
+                    made. Before writing a line of code I knew why most RAG systems fail (open-ended queries, no
+                    credibility filtering), what the architectural fix looked like (plan before you retrieve), and where
+                    the reliability boundaries were. The 13 days was execution. The year before it was the actual work.
+                </p>
+                <p>
+                    I am a two-time founder with a strong bias toward shipping things that work for real people under
+                    real constraints. I am finishing my M.S. in Computer Engineering at NYU Tandon in May 2026 and
+                    looking for AI engineering roles where the problem is genuinely hard and the measure of the work is
+                    whether it actually helps someone do something that matters.
+                </p>
+                <div class="btn-group">
+                    <a href="sharma_nishant_portfolio.pdf" target="_blank" class="btn">Resume</a>
+                    <a href="https://hellonishant.medium.com/" target="_blank" class="btn btn-outline">Blog</a>
+                </div>
+            </section>
+
+            <!-- FEATURED PROJECTS -->
+            <section id="projects">
+                <h2>Projects</h2>
+
+                <div class="paper">
+                    <div class="paper-title">
+                        Singularity — AI Deep Research Platform
+                    </div>
+                    <div class="paper-authors">Solo · ~25,500 LOC · 13 days</div>
+                    <div class="paper-venue">Mar 2026 – Apr 2026</div>
+                    <div class="paper-description">
+                        <p>
+                            A production multi-agent research platform that plans before it retrieves. The core insight
+                            driving the architecture: open-ended queries against a vector store produce semantically
+                            similar results, not relevant results. The fix is structural — agents construct a full
+                            report plan first, and every search query targets a specific planned section rather than
+                            a vague topic. Retrieval becomes deterministic given a good plan.
+                        </p>
+                        <ul>
+                            <li>Phase-5 orchestration: 3 manager agents propose full report trees in parallel, a lead
+                                agent synthesizes a canonical plan, every query targets a planned section — measurably
+                                reducing hallucination and retrieval fanout</li>
+                            <li>44-skill auto-registration system (<code>__init_subclass__</code> metaclass, zero
+                                manual wiring) spanning 18 retrieval sources (ArXiv, PubMed, SEC EDGAR, GitHub,
+                                ClinicalTrials, YouTube transcripts, legal databases, and more), 18 analysis skills,
+                                8 output skills</li>
+                            <li>2-pass credibility-weighted source gate filters low-quality sources before synthesis
+                                regardless of semantic similarity score</li>
+                            <li>Pure BYOK architecture: 10 models across xAI Grok, Gemini 2.5 Pro/Flash, and DeepSeek
+                                R1/V3 routed through a single injected LLM client; Fernet-encrypted keys at rest;
+                                JWT family rotation with reuse detection</li>
+                            <li>fastembed/ONNX embeddings — 1.4GB lighter than sentence-transformers, no GPU at
+                                inference; deployed as 6-container Docker stack on AWS t3-small at ~$26/month</li>
+                        </ul>
+                        <p><strong>Stack:</strong> FastAPI · ARQ · LangGraph · Qdrant · fastembed/ONNX · Redis ·
+                            PostgreSQL 16 · Next.js 16 · Docker · AWS · SSE</p>
+                    </div>
+                    <div class="paper-links">
+                        [ <a href="https://singularity.hellonish.dev" target="_blank">live</a> ]
+                    </div>
+                </div>
+
+                <div class="paper">
+                    <div class="paper-title">
+                        Wand — AI Career Intelligence Platform
+                    </div>
+                    <div class="paper-authors">Solo</div>
+                    <div class="paper-venue">Jan 2026 – Apr 2026</div>
+                    <div class="paper-description">
+                        <p>
+                            A career intelligence platform built around the observation that most resume-to-job
+                            matching tells you how similar two texts are, not whether you actually meet the
+                            requirements. Those are different problems. Wand separates them.
+                        </p>
+                        <ul>
+                            <li>6-step wave-parallelized LLM pipeline (profile extraction → JD parsing → company
+                                intel → match scoring → contact strategy → action plan) using
+                                <code>asyncio.gather()</code>; each step streams its result via WebSocket in real
+                                time as it completes</li>
+                            <li>Multi-model weighted scoring engine: Qualification Match (30%), Technical Skill (25%),
+                                Keyword (25%), Formatting (20%) — Gemini 2.5 Pro at temperature=0.0 for nuanced
+                                qualification reasoning, Flash for pattern-matching; evidence field enforced non-empty
+                                to prevent hallucinated matches</li>
+                            <li>Unified LLMClient routing all AI calls across Grok, Gemini, and DeepSeek at runtime;
+                                all outputs as typed Pydantic models via Instructor — zero JSON parsing anywhere in
+                                the codebase</li>
+                            <li>Multi-source profile unification (PDF resume + LinkedIn export + HTML portfolio) with
+                                semantic entity alignment and explicit merge-priority rules</li>
+                        </ul>
+                        <p><strong>Stack:</strong> FastAPI · Celery · Redis · WebSockets · Instructor · Pydantic ·
+                            Gemini · DeepSeek · SQLite · Docker</p>
+                    </div>
+                </div>
+
+                <div class="paper">
+                    <div class="paper-title">
+                        Finassistant — Multi-Agent Financial Research Platform
+                    </div>
+                    <div class="paper-authors">Solo</div>
+                    <div class="paper-venue">Nov 2025 – Dec 2025</div>
+                    <div class="paper-description">
+                        <ul>
+                            <li>Dual-mode LangGraph system: Chat mode (2–4 LLM calls, 2–4s latency) for quick
+                                queries; Think mode (10–15 calls, 15–30s) with Planner → Financial Agent →
+                                Publisher workflow and self-correction loops</li>
+                            <li>18+ financial tools: quantitative metrics (yfinance), news aggregation (NewsAPI +
+                                BeautifulSoup), SEC filing RAG pipeline (10-K/10-Q/8-K → ChromaDB, &lt;200ms vector
+                                search)</li>
+                            <li>MongoDB-backed session persistence; real-time WebSocket streaming; deployed AWS EC2
+                                + S3/CloudFront; 50+ req/sec throughput</li>
+                        </ul>
+                        <p><strong>Stack:</strong> LangGraph · FastAPI · ChromaDB · MongoDB · Gemini 1.5 Flash ·
+                            React 18 · Docker · AWS</p>
+                    </div>
+                    <div class="paper-links">
+                        [ <a href="https://github.com/hellonish/Finassistant" target="_blank">code</a> ]
+                    </div>
+                </div>
+
+                <div class="paper">
+                    <div class="paper-title">
+                        Snap2Caption — ML Systems for Caption Generation
+                    </div>
+                    <div class="paper-authors">Team · MLOps course project</div>
+                    <div class="paper-venue">Mar 2025 – May 2025</div>
+                    <div class="paper-description">
+                        <ul>
+                            <li>Fine-tuned LLaVA-1.5/1.6 (7B) with LoRA on InstaCities1M (100k urban images);
+                                FastAPI inference server with &lt;2s P90 latency; ~300 req/hr peak</li>
+                            <li>Full IaC stack: Terraform (VM provisioning on Chameleon Cloud), Ansible (config
+                                management), Kubernetes via Kubespray (3-node cluster); MLflow experiment tracking
+                                across BLEU, CIDEr, and test loss</li>
+                            <li>Feedback-to-retraining loop: user corrections → MinIO → Label Studio annotation →
+                                MLflow artifact registration; Prometheus/Grafana monitoring</li>
+                        </ul>
+                        <p><strong>Stack:</strong> LLaVA · LoRA · PyTorch · MLflow · FastAPI · Terraform · Ansible ·
+                            Kubernetes · Prometheus · Grafana</p>
+                    </div>
+                    <div class="paper-links">
+                        [ <a href="https://github.com/hellonish/Snap2Caption" target="_blank">code</a> ]
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- RESEARCH -->
+            <section id="research">
+                <h2>Research</h2>
+
+                <div class="paper">
+                    <div class="paper-title">
+                        Spectral Gradient Equalization (SGE) — ML Robustness
+                    </div>
+                    <div class="paper-venue">Spring 2026 · NYU Tandon · Advanced Machine Learning</div>
+                    <div class="paper-description">
+                        <p>
+                            A novel gradient-level intervention for spurious correlation mitigation in CNNs. The key
+                            insight: shortcut learning manifests as frequency-dominant gradient energy in a specific
+                            band. SGE applies 2D FFT over convolutional kernel spatial dimensions post-backpropagation,
+                            decomposes the weight gradient into spurious-band and causal-band components, and attenuates
+                            the spurious contribution via a per-channel scaling coefficient — without requiring group
+                            labels at training time.
+                        </p>
+                        <ul>
+                            <li>+3.1pp worst-group accuracy over ERM baseline on Waterbirds benchmark (ResNet-18);
+                                +2.5pp post-DFR gain with Tail-loss pairing</li>
+                            <li>Spurious-to-causal gradient energy ratio exceeds 1.0 from epoch 1 across all runs —
+                                shortcut-frequency dominance is an immediate training phenomenon, not late-stage</li>
+                            <li>Benchmarked 5 objectives (ERM, Group-Balanced, Tail-loss, GroupDRO, JTT); diagnosed
+                                GroupDRO failure as calibration stationarity under adversarial reweighting</li>
+                            <li>Unsupervised calibration via loss-stratified pseudo-groups estimates the radial
+                                frequency cutoff — no ground-truth group annotations required</li>
+                        </ul>
+                        <p><strong>Stack:</strong> PyTorch · ResNet-18 · Waterbirds · GroupDRO · JTT · DFR</p>
+                    </div>
+                </div>
+
+                <div class="paper">
+                    <div class="paper-title">
+                        SMOLSolver — Verifier-Guided Mathematical Reasoning
+                    </div>
+                    <div class="paper-venue">Sep 2025 – Dec 2025 · Team project (5 members) · NYU Tandon</div>
+                    <div class="paper-description">
+                        <p>
+                            Lightweight dual-model framework for step-level mathematical reasoning verification.
+                            My contribution: the Verifier module end-to-end.
+                        </p>
+                        <ul>
+                            <li>Fine-tuned TinyLLaMA (1.1B) on PRM800K for step-level correctness classification
+                                (correct/unclear/wrong) via 2-phase LoRA — Phase 1 on simple-context examples,
+                                Phase 2 on complex multi-step reasoning chains</li>
+                            <li>87.91% step classification accuracy; outperformed Phi-2 (81.5%) across QLoRA
+                                ablations at rank 16 and 64</li>
+                            <li>Generator: Phi-2 (2.7B) fine-tuned on GSM8K via QLoRA achieved 64.06% Pass@1
+                                with 7.86M trainable parameters (0.28%)</li>
+                        </ul>
+                        <p><strong>Stack:</strong> QLoRA · LoRA · TinyLLaMA · Phi-2 · PRM800K · GSM8K ·
+                            HuggingFace PEFT</p>
+                    </div>
+                    <div class="paper-links">
+                        [ <a href="project_reports/smolsolver_report.pdf" target="_blank">report</a> ]
+                    </div>
+                </div>
+
+                <div class="paper">
+                    <div class="paper-title">
+                        Cross-Domain Robustness in Image Super-Resolution
+                    </div>
+                    <div class="paper-venue">Sep 2025 – Dec 2025 · Team project · NYU Tandon</div>
+                    <div class="paper-description">
+                        <ul>
+                            <li>Benchmarked EDSR (CNN), SwinIR (Transformer), and Stable Diffusion x4 across
+                                DIV2K (natural), TextZoom (scene text), and STAR (astronomical) datasets under
+                                zero-shot and domain-adapted protocols</li>
+                            <li>Introduced Cross-Domain Drop (CDD) metric; diffusion models exhibit catastrophic
+                                CDD (79.18% on TextZoom); domain-specific fine-tuning recovers 75–100% of lost
+                                performance</li>
+                            <li>Key finding: text domains require 3x more adaptation (+10.6 dB) than astronomical
+                                imagery (+3.4 dB) due to high-frequency structural discontinuities</li>
+                        </ul>
+                    </div>
+                    <div class="paper-links">
+                        [ <a href="project_reports/cross_domain_vision_proposal.pdf" target="_blank">report</a> ]
+                    </div>
+                </div>
+
+                <div class="paper">
+                    <div class="paper-title">
+                        Jailbreaking Deep Vision Models — Adversarial Robustness
+                    </div>
+                    <div class="paper-venue">May 2025 · Team project · NYU Tandon</div>
+                    <div class="paper-description">
+                        <ul>
+                            <li>FGSM, I-FGSM, PGD, and patch attacks on ResNet-34 under strict
+                                l-infinity constraint (epsilon=0.02); PGD reduced Top-1 from 76% to 0.2%</li>
+                            <li>Confirmed black-box transferability: ResNet-34 adversarial examples degraded
+                                DenseNet-121 Top-1 from 74.80% to 59.80% without target model access</li>
+                        </ul>
+                    </div>
+                    <div class="paper-links">
+                        [ <a href="project_reports/jailbreaking.pdf" target="_blank">report</a> ]
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- EXPERIENCE -->
+            <section id="experience">
+                <h2>Experience</h2>
+
+                <div class="paper">
+                    <div class="paper-title">
+                        Machine Learning Teaching Assistant · NYU Tandon School of Engineering
+                    </div>
+                    <div class="paper-authors">New York, NY</div>
+                    <div class="paper-venue">Sep 2025 – Present</div>
+                    <div class="paper-description">
+                        <ul>
+                            <li>Standardized PyTorch training pipelines (data loading, training loops, evaluation)
+                                used by 100+ students across course offerings</li>
+                            <li>Led debugging sessions on CNN optimization, backpropagation, and autograd —
+                                helping students diagnose training failures and performance bottlenecks</li>
+                            <li>Created supplementary video lectures on ML calculus concepts for a graduate cohort
+                                of 50+ students</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="paper">
+                    <div class="paper-title">
+                        Co-Founder &amp; Lead Engineer · Macverin Technologies
+                    </div>
+                    <div class="paper-authors">India (Hybrid)</div>
+                    <div class="paper-venue">Jul 2022 – Aug 2024</div>
+                    <div class="paper-description">
+                        <ul>
+                            <li>Architected distributed microservices (FastAPI + Node.js) serving 1K+ DAU across
+                                10+ clients; maintained 99.9% system availability</li>
+                            <li>Built full-stack products end-to-end: TypeScript/React/Next.js frontends, ML
+                                inference backends, AWS deployments, automated CI/CD pipelines</li>
+                        </ul>
+                    </div>
+                </div>
+
+            </section>
+
+            <!-- SKILLS -->
+            <section id="skills">
+                <h2>Technical Skills</h2>
+                <ul>
+                    <li><strong>AI/ML:</strong> RAG pipelines, Multi-agent orchestration, LLM fine-tuning
+                        (LoRA/QLoRA), RLHF (GRPO/PPO/DPO), Instructor (structured outputs), LangGraph, LangChain,
+                        DSPy, Vector stores (Qdrant, ChromaDB, Pinecone), fastembed/ONNX, TensorRT, MLflow,
+                        PyTorch, HuggingFace Transformers, PEFT</li>
+                    <li><strong>Backend:</strong> FastAPI, PostgreSQL, Redis, ARQ, asyncpg, SQLAlchemy, Celery,
+                        WebSockets, SSE, REST, gRPC, Node.js, Django</li>
+                    <li><strong>Infra:</strong> Docker, Kubernetes, AWS (EC2, S3, RDS, IAM, CloudFront), Terraform,
+                        Ansible, GitHub Actions, Prometheus, Grafana, Caddy</li>
+                    <li><strong>Frontend:</strong> Next.js, React, TypeScript</li>
+                    <li><strong>Languages:</strong> Python, TypeScript, Java, C++, SQL</li>
+                </ul>
+            </section>
+
+            <!-- TEACHING -->
+            <section id="more">
+                <h2>Teaching</h2>
+
+                <div class="paper" style="border-left: 4px solid #57068c; background: #f9f9f9;">
+                    <div class="paper-title">
+                        <a href="https://youtu.be/es5uhEcEnIM" target="_blank">
+                            Lecture: The Math Behind Regularization (L1 vs L2)
+                        </a>
+                    </div>
+                    <div class="paper-venue">Nov 2025 · Technical Deep Dive</div>
+                    <div style="margin: 15px 0;">
+                        <iframe width="100%" height="315" src="https://www.youtube.com/embed/es5uhEcEnIM"
+                            title="L1 vs L2 Regularization" frameborder="0"
+                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                            allowfullscreen style="border-radius: 8px;">
+                        </iframe>
+                    </div>
+                    <div class="paper-description">
+                        A 17-minute deep dive into why L1 regularization produces sparsity while L2 shrinks weights —
+                        derived from gradient updates and geometric intuition, backed by Python experiments on the
+                        Diabetes dataset. Built for students who had memorized the formula but not understood it.
+                    </div>
+                    <div class="paper-links">
+                        [ <a href="teaching/Regularization-Slides.pdf" target="_blank">slides</a> ]
+                        [ <a href="https://youtu.be/es5uhEcEnIM" target="_blank">YouTube</a> ]
+                    </div>
+                </div>
+
+                <ul style="margin-top: 20px;">
+                    <li><strong>ML Course Assistant @ NYU Tandon:</strong> Mentoring 50+ graduate students.
+                        Standardized training pipelines used by 100+ students across course offerings.</li>
+                    <li><strong>Web Development Mentor:</strong> Taught 120+ students, enabling deployment of
+                        40+ web apps.</li>
+                    <li><strong>LeetCode:</strong> 200+ problems solved, 52 solutions published, 4.6K+ community
+                        views.</li>
+                    <li><strong>Tech Blogger:</strong> Writing on AI, agents, and software at
+                        <a href="https://hellonishant.medium.com/" target="_blank">Medium</a>.</li>
+                </ul>
+
+            </section>
+
+            <footer>
+                <p>Last updated: April 2026 · Available May 2026 · OPT · New York, NY</p>
+            </footer>
+
+        </main>
+    </div>
+</body>
+
+</html>

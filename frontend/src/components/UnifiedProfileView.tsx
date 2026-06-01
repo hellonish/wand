@@ -1,12 +1,55 @@
+'use client';
 
 import { useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 
-interface UnifiedProfileViewProps {
-    profile: any;
+interface ContactInfo {
+    email?: string | null;
+    phone?: string | null;
+    linkedin_url?: string | null;
+    portfolio_url?: string | null;
+    github_url?: string | null;
 }
 
-export default function UnifiedProfileView({ profile }: UnifiedProfileViewProps) {
+interface ProfileBasics {
+    name?: string | null;
+    title?: string | null;
+    summary?: string | null;
+    location?: string | null;
+    contact_info?: ContactInfo | null;
+}
+
+interface UnifiedWorkExperienceItem {
+    job_title?: string | null;
+    company_name?: string | null;
+    start_date?: string | null;
+    end_date?: string | null;
+    is_current?: boolean;
+    location?: string | null;
+    description?: string[] | string | null;
+    achievements?: string[] | null;
+}
+
+interface UnifiedEducationItem {
+    institution?: string | null;
+    degree?: string | null;
+    major?: string | null;
+    graduation_year?: string | null;
+}
+
+interface UnifiedProfile {
+    basics?: ProfileBasics | null;
+    work_experience?: UnifiedWorkExperienceItem[] | null;
+    education?: UnifiedEducationItem[] | null;
+    skills?: string[] | null;
+    dynamic_sections?: Record<string, unknown> | null;
+}
+
+interface UnifiedProfileViewProps {
+    profile: UnifiedProfile;
+    dim?: boolean;
+}
+
+export default function UnifiedProfileView({ profile, dim }: UnifiedProfileViewProps) {
     const [activeTab, setActiveTab] = useState<'overview' | 'experience' | 'education' | 'skills' | 'raw'>('overview');
 
     if (!profile) return null;
@@ -17,324 +60,275 @@ export default function UnifiedProfileView({ profile }: UnifiedProfileViewProps)
     const education = profile.education || [];
     const skills = profile.skills || [];
 
-    // Helper to format dates
-    const formatDate = (dateStr: string) => {
+    const formatDescription = (description: UnifiedWorkExperienceItem['description']) => {
+        if (Array.isArray(description)) return description.join(' ');
+        return description || '';
+    };
+
+    const formatDate = (dateStr?: string | null) => {
         if (!dateStr) return 'Present';
         try {
-            // Check if YYYY-MM
             if (/^\d{4}-\d{2}$/.test(dateStr)) {
                 const [year, month] = dateStr.split('-');
                 return new Date(parseInt(year), parseInt(month) - 1).toLocaleDateString(undefined, { year: 'numeric', month: 'short' });
             }
             return dateStr;
-        } catch (e) {
+        } catch {
             return dateStr;
         }
     };
 
+    // Generate avatar initials
+    const initials = (basics.name || '?').split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase();
+
+    const TABS = [
+        { id: 'overview', label: 'Overview' },
+        { id: 'experience', label: 'Experience' },
+        { id: 'education', label: 'Education' },
+        { id: 'skills', label: 'Skills' },
+        { id: 'raw', label: 'Raw Data' },
+    ] as const;
+
     return (
-        <div className="bg-[var(--card-bg)] border border-[var(--border-color)] rounded-xl overflow-hidden">
-            {/* Header Section */}
-            <div className="p-8 border-b border-[var(--border-color)] bg-[var(--accent-dim)]">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                    <div>
-                        <h2 className="text-3xl font-bold text-[var(--text-primary)]">
-                            {basics.name || "Unified Profile"}
-                        </h2>
+        <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius)', overflow: 'hidden', background: 'var(--surface)', opacity: dim ? 0.5 : 1, transition: 'opacity 200ms' }}>
+            {/* Header */}
+            <div style={{ padding: '18px 20px 14px', borderBottom: '1px solid var(--border-soft)', background: 'var(--bg-tint)' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 12 }}>
+                    {/* Avatar */}
+                    <div style={{
+                        width: 48, height: 48, borderRadius: '50%',
+                        background: 'var(--accent-soft)', color: 'var(--accent-ink)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontFamily: 'var(--font-mono)', fontWeight: 600, fontSize: 16, flexShrink: 0,
+                    }}>
+                        {initials}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontFamily: 'var(--font-display)', fontSize: 'calc(var(--display-scale, 0.92) * 20px)', color: 'var(--text)', fontWeight: 500, letterSpacing: '-0.01em' }}>
+                            {basics.name || 'Unified Profile'}
+                        </div>
                         {basics.title && (
-                            <p className="text-lg text-[var(--accent)] font-medium mt-1">{basics.title}</p>
+                            <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 1 }}>{basics.title}</div>
                         )}
-                        {basics.summary && (
-                            <p className="text-[var(--text-secondary)] mt-4 max-w-2xl text-sm leading-relaxed">
-                                {basics.summary}
-                            </p>
-                        )}
+                        <div style={{ display: 'flex', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
+                            {contact.email && <span style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>{contact.email}</span>}
+                            {basics.location && <span style={{ fontSize: 12, color: 'var(--text-3)' }}>{basics.location}</span>}
+                        </div>
                     </div>
                 </div>
 
-                {/* Contact Pills */}
-                <div className="flex flex-wrap gap-3 mt-6">
-                    {contact.email && (
-                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)]">
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                            </svg>
-                            {contact.email}
-                        </div>
-                    )}
-                    {contact.phone && (
-                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-color)] text-xs text-[var(--text-secondary)]">
-                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                            </svg>
-                            {contact.phone}
-                        </div>
-                    )}
-                    {contact.linkedin_url && (
-                        <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-[var(--accent-dim)] border border-[var(--accent-border)] text-xs text-[var(--accent)] hover:bg-[var(--accent-dim)] transition-colors">
-                            <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
-                            </svg>
-                            LinkedIn
-                        </a>
-                    )}
-                </div>
+                {/* Contact pills */}
+                {(contact.linkedin_url || contact.portfolio_url || contact.github_url || contact.phone) && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {contact.phone && (
+                            <ContactPill>{contact.phone}</ContactPill>
+                        )}
+                        {contact.linkedin_url && (
+                            <a href={contact.linkedin_url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
+                                <ContactPill accent>LinkedIn</ContactPill>
+                            </a>
+                        )}
+                        {contact.portfolio_url && (
+                            <a href={contact.portfolio_url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
+                                <ContactPill>Portfolio</ContactPill>
+                            </a>
+                        )}
+                        {contact.github_url && (
+                            <a href={contact.github_url} target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none' }}>
+                                <ContactPill>GitHub</ContactPill>
+                            </a>
+                        )}
+                    </div>
+                )}
             </div>
 
-            {/* Navigation Tabs */}
-            <div className="flex gap-1 px-4 border-b border-[var(--border-color)] bg-[var(--bg-secondary)]/50 overflow-x-auto">
-                {[
-                    { id: 'overview', label: 'Overview' },
-                    { id: 'experience', label: 'Experience' },
-                    { id: 'education', label: 'Education' },
-                    { id: 'skills', label: 'Skills' },
-                    { id: 'raw', label: 'Raw Data' }
-                ].map((tab) => (
+            {/* Tabs */}
+            <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border-soft)', background: 'var(--surface)', overflowX: 'auto' }}>
+                {TABS.map(tab => (
                     <button
                         key={tab.id}
-                        onClick={() => setActiveTab(tab.id as any)}
-                        className={`px-4 py-3 text-sm font-medium capitalize transition-colors relative whitespace-nowrap ${activeTab === tab.id
-                            ? 'text-[var(--accent)]'
-                            : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
-                            }`}
+                        onClick={() => setActiveTab(tab.id as typeof activeTab)}
+                        style={{
+                            padding: '10px 16px', fontSize: 12.5, fontWeight: 500,
+                            color: activeTab === tab.id ? 'var(--accent)' : 'var(--text-3)',
+                            background: 'transparent', border: 'none', cursor: 'pointer',
+                            borderBottom: `2px solid ${activeTab === tab.id ? 'var(--accent)' : 'transparent'}`,
+                            transition: 'all 140ms', whiteSpace: 'nowrap',
+                        }}
                     >
                         {tab.label}
-                        {activeTab === tab.id && (
-                            <motion.div
-                                layoutId="activeTabProfile"
-                                className="absolute bottom-0 left-0 right-0 h-0.5 bg-[var(--accent)]"
-                            />
-                        )}
                     </button>
                 ))}
             </div>
 
-            {/* Tab Content */}
-            <div className="p-6 min-h-[400px]">
-                <AnimatePresence mode="wait">
-                    {/* Overview Tab */}
-                    {activeTab === 'overview' && (
-                        <motion.div
-                            key="overview"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            transition={{ duration: 0.2 }}
-                            className="space-y-8"
-                        >
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                                <div className="space-y-4">
-                                    <h3 className="text-sm font-bold text-[var(--text-muted)] uppercase tracking-wider">Top Skills</h3>
-                                    <div className="flex flex-wrap gap-2">
-                                        {skills.slice(0, 10).map((skill: string, i: number) => (
-                                            <span key={i} className="px-2.5 py-1 text-xs font-medium rounded-md bg-[var(--accent-dim)] text-[var(--accent)] border border-[var(--accent-border)]">
-                                                {skill}
-                                            </span>
-                                        ))}
-                                        {skills.length > 10 && (
-                                            <span className="px-2.5 py-1 text-xs font-medium rounded-md text-[var(--text-muted)] border border-[var(--border-color)]">
-                                                +{skills.length - 10} more
-                                            </span>
-                                        )}
+            {/* Tab content */}
+            <div style={{ padding: '16px 20px', minHeight: 360 }}>
+                {/* Overview */}
+                {activeTab === 'overview' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                        {basics.summary && (
+                            <ProfileSection title="Summary">
+                                <div style={{ fontSize: 13, color: 'var(--text-2)', lineHeight: 1.6 }}>{basics.summary}</div>
+                            </ProfileSection>
+                        )}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                            <ProfileSection title="Top Skills">
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                                    {skills.slice(0, 10).map((skill, i) => (
+                                        <SkillPill key={i}>{skill}</SkillPill>
+                                    ))}
+                                    {skills.length > 10 && (
+                                        <span style={{ fontSize: 11.5, color: 'var(--text-3)', padding: '3px 0' }}>+{skills.length - 10} more</span>
+                                    )}
+                                </div>
+                            </ProfileSection>
+                            <ProfileSection title="Education">
+                                {education.length > 0 ? education.slice(0, 2).map((edu, i) => (
+                                    <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 8 }}>
+                                        <div style={{ width: 2, minHeight: 36, background: 'var(--border)', borderRadius: 2, flexShrink: 0 }} />
+                                        <div>
+                                            <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{edu.institution}</div>
+                                            <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{edu.degree}</div>
+                                        </div>
+                                    </div>
+                                )) : <Empty>No education listed</Empty>}
+                            </ProfileSection>
+                        </div>
+                        <ProfileSection title="Latest Experience">
+                            {work.length > 0 ? work.slice(0, 2).map((job, i) => (
+                                <div key={i} style={{ background: 'var(--bg-tint)', border: '1px solid var(--border-soft)', borderRadius: 'var(--radius-sm)', padding: '12px 14px', marginBottom: 8 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 4 }}>
+                                        <div>
+                                            <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text)' }}>{job.job_title}</div>
+                                            <div style={{ fontSize: 12.5, color: 'var(--text-2)' }}>{job.company_name}</div>
+                                        </div>
+                                        <span style={{ fontSize: 11, fontFamily: 'var(--font-mono)', color: 'var(--text-3)', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                                            {formatDate(job.start_date)} – {formatDate(job.end_date)}
+                                        </span>
+                                    </div>
+                                    <div style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                                        {formatDescription(job.description)}
                                     </div>
                                 </div>
-                                <div className="space-y-4">
-                                    <h3 className="text-sm font-bold text-[var(--text-muted)] uppercase tracking-wider">Education</h3>
-                                    {education.length > 0 ? (
-                                        education.slice(0, 2).map((edu: any, i: number) => (
-                                            <div key={i} className="flex gap-3">
-                                                <div className="w-1 h-full min-h-[40px] bg-[var(--border-color)] rounded-full shrink-0" />
-                                                <div>
-                                                    <div className="font-medium text-[var(--text-primary)]">{edu.institution}</div>
-                                                    <div className="text-xs text-[var(--text-secondary)]">{edu.degree}</div>
-                                                </div>
-                                            </div>
-                                        ))
-                                    ) : (
-                                        <p className="text-sm text-[var(--text-muted)] italic">No education listed</p>
+                            )) : <Empty>No experience listed</Empty>}
+                        </ProfileSection>
+                    </div>
+                )}
+
+                {/* Experience */}
+                {activeTab === 'experience' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                        {work.length > 0 ? work.map((job, i) => (
+                            <div key={i} style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: 14 }}>
+                                <div>
+                                    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-3)', lineHeight: 1.5 }}>
+                                        {formatDate(job.start_date)}<br />— {formatDate(job.end_date)}
+                                    </div>
+                                    {job.location && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 4 }}>{job.location}</div>}
+                                </div>
+                                <div>
+                                    <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text)', marginBottom: 2 }}>{job.job_title}</div>
+                                    <div style={{ fontSize: 12.5, color: 'var(--text-2)', marginBottom: 8 }}>{job.company_name}</div>
+                                    {job.description && (
+                                        <div style={{ fontSize: 12.5, color: 'var(--text-2)', lineHeight: 1.6, whiteSpace: 'pre-wrap', marginBottom: 6 }}>
+                                            {formatDescription(job.description)}
+                                        </div>
+                                    )}
+                                    {job.achievements && job.achievements.length > 0 && (
+                                        <ul style={{ margin: 0, paddingLeft: 16, color: 'var(--text-2)', fontSize: 12.5, lineHeight: 1.7 }}>
+                                            {job.achievements.map((item, j) => <li key={j}>{item}</li>)}
+                                        </ul>
                                     )}
                                 </div>
                             </div>
+                        )) : <Empty>No work experience found.</Empty>}
+                    </div>
+                )}
 
-                            <div className="pt-4 border-t border-[var(--border-color)]">
-                                <h3 className="text-sm font-bold text-[var(--text-muted)] uppercase tracking-wider mb-4">Latest Experience</h3>
-                                {work.length > 0 ? (
-                                    <div className="space-y-4">
-                                        {work.slice(0, 2).map((job: any, i: number) => (
-                                            <div key={i} className="bg-[var(--bg-secondary)] rounded-lg p-4 border border-[var(--border-color)]">
-                                                <div className="flex justify-between items-start mb-2">
-                                                    <div>
-                                                        <div className="font-bold text-[var(--text-primary)]">{job.job_title}</div>
-                                                        <div className="text-sm text-[var(--accent)]">{job.company_name}</div>
-                                                    </div>
-                                                    <div className="text-xs text-[var(--text-muted)] whitespace-nowrap bg-[var(--bg-primary)] px-2 py-1 rounded">
-                                                        {formatDate(job.start_date)} - {formatDate(job.end_date)}
-                                                    </div>
-                                                </div>
-                                                <p className="text-sm text-[var(--text-secondary)] line-clamp-2">
-                                                    {job.description}
-                                                </p>
-                                            </div>
-                                        ))}
+                {/* Education */}
+                {activeTab === 'education' && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                        {education.length > 0 ? education.map((edu, i) => (
+                            <div key={i} style={{ background: 'var(--bg-tint)', border: '1px solid var(--border-soft)', borderRadius: 'var(--radius-sm)', padding: '14px 16px' }}>
+                                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', marginBottom: 3 }}>{edu.institution}</div>
+                                <div style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 2 }}>{edu.degree}</div>
+                                {(edu.major || edu.graduation_year) && (
+                                    <div style={{ fontSize: 12, color: 'var(--text-3)', fontFamily: 'var(--font-mono)' }}>
+                                        {[edu.major, edu.graduation_year].filter(Boolean).join(' · ')}
                                     </div>
-                                ) : (
-                                    <p className="text-sm text-[var(--text-muted)] italic">No experience listed</p>
                                 )}
                             </div>
-                        </motion.div>
-                    )}
+                        )) : <div style={{ gridColumn: '1 / -1' }}><Empty>No education found.</Empty></div>}
+                    </div>
+                )}
 
-                    {/* Experience Tab */}
-                    {activeTab === 'experience' && (
-                        <motion.div
-                            key="experience"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            transition={{ duration: 0.2 }}
-                            className="space-y-8 relative pl-4"
-                        >
-                            {/* Timeline line */}
-                            <div className="absolute left-4 top-2 bottom-2 w-0.5 bg-[var(--border-color)]" />
-
-                            {work.length > 0 ? (
-                                work.map((job: any, i: number) => (
-                                    <div key={i} className="relative pl-8">
-                                        {/* Timeline Dot */}
-                                        <div className="absolute left-1.5 top-2 w-5 h-5 rounded-full border-4 border-[var(--card-bg)] bg-[var(--accent)] -translate-x-1/2" />
-
-                                        <div className="bg-[var(--bg-secondary)]/50 rounded-xl p-6 border border-[var(--border-color)] hover:border-[var(--accent-border)] transition-colors">
-                                            <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2 mb-4">
-                                                <div>
-                                                    <h3 className="text-lg font-bold text-[var(--text-primary)]">{job.job_title}</h3>
-                                                    <div className="text-[var(--accent)] font-medium">{job.company_name}</div>
-                                                    {job.location && (
-                                                        <div className="text-xs text-[var(--text-muted)] mt-1 flex items-center gap-1">
-                                                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                            </svg>
-                                                            {job.location}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div className="text-xs font-mono text-[var(--text-muted)] bg-[var(--card-bg)] px-3 py-1.5 rounded-full border border-[var(--border-color)] whitespace-nowrap">
-                                                    {formatDate(job.start_date)} — {formatDate(job.end_date)}
-                                                </div>
-                                            </div>
-
-                                            {job.description && (
-                                                <p className="text-sm text-[var(--text-secondary)] leading-relaxed mb-4 whitespace-pre-wrap">
-                                                    {job.description}
-                                                </p>
-                                            )}
-
-                                            {job.achievements && job.achievements.length > 0 && (
-                                                <ul className="space-y-1">
-                                                    {job.achievements.map((item: string, j: number) => (
-                                                        <li key={j} className="flex items-start gap-2 text-sm text-[var(--text-secondary)]">
-                                                            <span className="text-[var(--accent)] mt-1.5 w-1.5 h-1.5 rounded-full bg-[var(--accent)] shrink-0" />
-                                                            {item}
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))
-                            ) : (
-                                <div className="text-center py-12 text-[var(--text-muted)] border border-dashed border-[var(--border-color)] rounded-xl bg-[var(--bg-secondary)]/30 mx-8">
-                                    No work experience found in your documents.
-                                </div>
-                            )}
-                        </motion.div>
-                    )}
-
-                    {/* Education Tab */}
-                    {activeTab === 'education' && (
-                        <motion.div
-                            key="education"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            transition={{ duration: 0.2 }}
-                            className="grid grid-cols-1 md:grid-cols-2 gap-4"
-                        >
-                            {education.length > 0 ? (
-                                education.map((edu: any, i: number) => (
-                                    <div key={i} className="bg-[var(--bg-secondary)] rounded-xl p-6 border border-[var(--border-color)] flex gap-4 items-start group hover:border-[var(--accent-border)] transition-colors">
-                                        <div className="w-12 h-12 rounded-lg bg-[var(--accent-dim)] flex items-center justify-center text-[var(--accent)] shrink-0 group-hover:scale-110 transition-transform">
-                                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 14l9-5-9-5-9 5 9 5z" />
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 14l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z" />
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
-                                            </svg>
-                                        </div>
-                                        <div>
-                                            <h3 className="text-lg font-bold text-[var(--text-primary)]">{edu.institution}</h3>
-                                            <div className="text-[var(--accent)] font-medium mb-1">{edu.degree}</div>
-                                            {(edu.start_date || edu.end_date) && (
-                                                <div className="text-xs text-[var(--text-muted)]">
-                                                    {edu.start_date} - {edu.end_date}
-                                                </div>
-                                            )}
-                                            {edu.gpa && (
-                                                <div className="mt-2 text-xs font-mono bg-[var(--success-dim)] text-[var(--success)] px-2 py-1 rounded inline-block">
-                                                    GPA: {edu.gpa}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                ))
-                            ) : (
-                                <div className="col-span-full text-center py-12 text-[var(--text-muted)] border border-dashed border-[var(--border-color)] rounded-xl bg-[var(--bg-secondary)]/30">
-                                    No education found.
-                                </div>
-                            )}
-                        </motion.div>
-                    )}
-
-                    {/* Skills Tab */}
-                    {activeTab === 'skills' && (
-                        <motion.div
-                            key="skills"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            transition={{ duration: 0.2 }}
-                        >
-                            <h3 className="text-sm font-bold text-[var(--text-muted)] uppercase tracking-wider mb-6">All Skills</h3>
-                            <div className="flex flex-wrap gap-3">
-                                {skills.map((skill: string, i: number) => (
-                                    <div key={i} className="px-4 py-2 bg-[var(--bg-secondary)] border border-[var(--border-color)] rounded-lg text-sm text-[var(--text-primary)] hover:border-[var(--accent-border)] hover:text-[var(--accent)] transition-colors">
-                                        {skill}
-                                    </div>
-                                ))}
+                {/* Skills */}
+                {activeTab === 'skills' && (
+                    <div>
+                        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 12 }}>
+                            All Skills
+                        </div>
+                        {skills.length > 0 ? (
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                {skills.map((skill, i) => <SkillPill key={i}>{skill}</SkillPill>)}
                             </div>
-                            {skills.length === 0 && (
-                                <div className="text-center py-12 text-[var(--text-muted)] border border-dashed border-[var(--border-color)] rounded-xl bg-[var(--bg-secondary)]/30">
-                                    No skills extracted.
-                                </div>
-                            )}
-                        </motion.div>
-                    )}
+                        ) : <Empty>No skills extracted.</Empty>}
+                    </div>
+                )}
 
-                    {/* Raw Tab */}
-                    {activeTab === 'raw' && (
-                        <motion.div
-                            key="raw"
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: -10 }}
-                            className="bg-[var(--surface)] rounded-xl p-4 overflow-auto max-h-[600px]"
-                        >
-                            <pre className="text-xs text-[var(--text-2)] font-mono">
-                                {JSON.stringify(profile, null, 2)}
-                            </pre>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+                {/* Raw */}
+                {activeTab === 'raw' && (
+                    <div style={{ background: 'var(--bg-tint)', borderRadius: 'var(--radius-sm)', padding: 14, overflow: 'auto', maxHeight: 560 }}>
+                        <pre style={{ fontSize: 11.5, fontFamily: 'var(--font-mono)', color: 'var(--text-2)', margin: 0, lineHeight: 1.6 }}>
+                            {JSON.stringify(profile, null, 2)}
+                        </pre>
+                    </div>
+                )}
             </div>
         </div>
+    );
+}
+
+function ProfileSection({ title, children }: { title: string; children: React.ReactNode }) {
+    return (
+        <div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text-3)', marginBottom: 8 }}>
+                {title}
+            </div>
+            {children}
+        </div>
+    );
+}
+
+function SkillPill({ children }: { children: React.ReactNode }) {
+    return (
+        <span style={{
+            display: 'inline-flex', alignItems: 'center',
+            height: 24, padding: '0 9px', fontSize: 11.5, fontWeight: 500,
+            border: '1px solid var(--border)', borderRadius: 'var(--radius-xs)',
+            color: 'var(--text-2)', background: 'var(--surface-2)',
+        }}>
+            {children}
+        </span>
+    );
+}
+
+function ContactPill({ children, accent }: { children: React.ReactNode; accent?: boolean }) {
+    return (
+        <span style={{
+            display: 'inline-flex', alignItems: 'center',
+            height: 24, padding: '0 10px', fontSize: 12, fontWeight: 500,
+            borderRadius: 999, border: accent ? '1px solid var(--accent-soft)' : '1px solid var(--border-soft)',
+            background: accent ? 'var(--accent-soft)' : 'var(--surface-2)',
+            color: accent ? 'var(--accent-ink)' : 'var(--text-3)',
+        }}>
+            {children}
+        </span>
+    );
+}
+
+function Empty({ children }: { children: React.ReactNode }) {
+    return (
+        <p style={{ fontSize: 13, color: 'var(--text-3)', fontStyle: 'italic', margin: 0 }}>{children}</p>
     );
 }

@@ -3,7 +3,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { api, JobTrackCreate } from '@/utils/api';
+import { useRouter } from 'next/navigation';
+import { api, JobTrackCreate, type JobStatus } from '@/utils/api';
 
 /** Status options for the Track mode dropdown. */
 const STATUS_OPTIONS = ['tracked', 'applied', 'interview', 'offer', 'rejected', 'archived'] as const;
@@ -32,11 +33,16 @@ export interface AddJobModalProps {
 export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracked }: AddJobModalProps) {
     // ── All hooks MUST be called before any early return (Rules of Hooks) ──
 
+    const router = useRouter();
+
     // SSR guard
     const [mounted, setMounted] = useState(false);
 
     // Mode
     const [addMode, setAddMode] = useState<AddMode>('analyze');
+
+    // Error banner
+    const [errorCode, setErrorCode] = useState<string | null>(null);
 
     // Analyze-mode state
     const [jdText, setJdText] = useState('');
@@ -47,7 +53,7 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
     const [trackCompany, setTrackCompany] = useState('');
     const [trackUrl, setTrackUrl] = useState('');
     const [trackLocation, setTrackLocation] = useState('');
-    const [trackStatus, setTrackStatus] = useState<string>('tracked');
+    const [trackStatus, setTrackStatus] = useState<JobStatus>('tracked');
 
     // Shared
     const [isCreating, setIsCreating] = useState(false);
@@ -65,6 +71,7 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
         setTrackUrl('');
         setTrackLocation('');
         setTrackStatus('tracked');
+        setErrorCode(null);
     }, []);
 
     /** Close the modal and reset form state. */
@@ -82,6 +89,7 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
     const handleCreateJob = async () => {
         if (!jdText.trim() || isCreating) return;
         setIsCreating(true);
+        setErrorCode(null);
         try {
             const newJob = await api.createJob({
                 jd_text: jdText.trim(),
@@ -91,7 +99,12 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
             onClose();
             onJobCreated?.(newJob.id);
         } catch (error) {
-            console.error('Failed to create job:', error);
+            const code = (error as Error & { code?: string }).code;
+            if (code) {
+                setErrorCode(code);
+            } else {
+                console.error('Failed to create job:', error);
+            }
         } finally {
             setIsCreating(false);
         }
@@ -168,33 +181,42 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
                         {/* ── Mode toggle ─────────────────────────────────── */}
                         <div className="px-5 pt-4">
                             <div
-                                className="flex rounded-lg p-0.5 w-full"
-                                style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}
+                                className="flex w-full"
+                                style={{
+                                    background: 'var(--bg-tint)',
+                                    border: '1px solid var(--border)',
+                                    borderRadius: 'var(--radius)',
+                                    padding: 3,
+                                    gap: 3,
+                                }}
                             >
                                 {([
-                                    { key: 'analyze' as const, label: 'Analyze with AI', desc: 'Run full 6-step pipeline' },
-                                    { key: 'track' as const, label: 'Just Track', desc: 'Log without analysis' },
-                                ]).map(opt => (
-                                    <button
-                                        key={opt.key}
-                                        onClick={() => setAddMode(opt.key)}
-                                        className="flex-1 flex flex-col items-center py-2 px-3 rounded-md text-sm transition-all cursor-pointer"
-                                        style={{
-                                            background: addMode === opt.key ? 'var(--card)' : 'transparent',
-                                            color: addMode === opt.key ? 'var(--text-1)' : 'var(--text-3)',
-                                            border: addMode === opt.key ? '1px solid var(--border)' : '1px solid transparent',
-                                            fontWeight: addMode === opt.key ? 500 : 400,
-                                        }}
-                                    >
-                                        <span>{opt.label}</span>
-                                        <span
-                                            className="text-xs mt-0.5"
-                                            style={{ color: 'var(--text-3)', opacity: 0.8 }}
+                                    { key: 'analyze' as const, label: 'Analyze with JobLens', desc: 'Full analysis — fit score, gaps, and recommendations' },
+                                    { key: 'track' as const, label: 'Track a job', desc: 'Save the job without analysis' },
+                                ]).map(opt => {
+                                    const active = addMode === opt.key;
+                                    return (
+                                        <button
+                                            key={opt.key}
+                                            onClick={() => setAddMode(opt.key)}
+                                            style={{
+                                                flex: 1, display: 'flex', flexDirection: 'column',
+                                                alignItems: 'center', gap: 2,
+                                                padding: '9px 12px',
+                                                borderRadius: 'calc(var(--radius) - 1px)',
+                                                background: active ? 'var(--surface)' : 'transparent',
+                                                boxShadow: active ? 'var(--shadow-2)' : 'none',
+                                                color: active ? 'var(--text)' : 'var(--text-3)',
+                                                border: 'none',
+                                                cursor: active ? 'default' : 'pointer',
+                                                transition: 'all 140ms ease',
+                                            }}
                                         >
-                                            {opt.desc}
-                                        </span>
-                                    </button>
-                                ))}
+                                            <span style={{ fontSize: 13.5, fontWeight: active ? 500 : 400 }}>{opt.label}</span>
+                                            <span style={{ fontSize: 11.5, color: active ? 'var(--text-3)' : 'var(--text-4)' }}>{opt.desc}</span>
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
 
@@ -206,13 +228,13 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
                                         className="block text-xs mb-1.5"
                                         style={{ color: 'var(--text-2)' }}
                                     >
-                                        Job Description{' '}
+                                        Job description{' '}
                                         <span style={{ color: 'var(--accent)' }}>*</span>
                                     </label>
                                     <textarea
                                         value={jdText}
                                         onChange={e => setJdText(e.target.value)}
-                                        placeholder="Paste the full job description here..."
+                                        placeholder="Paste the complete job description…"
                                         rows={9}
                                         className="w-full rounded-lg px-3 py-2.5 text-sm resize-none focus:outline-none transition-colors"
                                         style={{
@@ -255,7 +277,7 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
                                         }}
                                     />
                                     <p className="text-xs mt-1" style={{ color: 'var(--text-3)' }}>
-                                        Used to research company culture and engineering environment
+                                        Optional — helps Wand gather company context and culture
                                     </p>
                                 </div>
                             </div>
@@ -270,7 +292,7 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
                                             className="block text-xs mb-1.5"
                                             style={{ color: 'var(--text-2)' }}
                                         >
-                                            Job Title{' '}
+                                            Job title{' '}
                                             <span style={{ color: 'var(--accent)' }}>*</span>
                                         </label>
                                         <input
@@ -304,7 +326,7 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
                                             type="text"
                                             value={trackCompany}
                                             onChange={e => setTrackCompany(e.target.value)}
-                                            placeholder="Acme Inc."
+                                            placeholder="Example Corp"
                                             className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors"
                                             style={{
                                                 background: 'var(--surface)',
@@ -386,7 +408,7 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
                                         </label>
                                         <select
                                             value={trackStatus}
-                                            onChange={e => setTrackStatus(e.target.value)}
+                                        onChange={e => setTrackStatus(e.target.value as JobStatus)}
                                             className="w-full rounded-lg px-3 py-2 text-sm focus:outline-none transition-colors cursor-pointer"
                                             style={{
                                                 background: 'var(--surface)',
@@ -405,6 +427,41 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
                             </div>
                         )}
 
+                        {/* ── Error banner ────────────────────────────────── */}
+                        {errorCode === 'NO_PROFILE_DOCUMENTS' && (
+                            <div
+                                className="mx-5 mb-1 rounded-lg flex items-start gap-3 px-4 py-3"
+                                style={{
+                                    background: 'rgba(245, 158, 11, 0.08)',
+                                    border: '1px solid rgba(245, 158, 11, 0.35)',
+                                }}
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(217,119,6,1)" strokeWidth="2" style={{ flexShrink: 0, marginTop: 1 }}>
+                                    <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                                </svg>
+                                <div style={{ flex: 1 }}>
+                                    <p style={{ fontSize: 13, fontWeight: 500, color: 'rgba(180,100,0,1)', margin: 0, marginBottom: 4 }}>
+                                        No profile documents found
+                                    </p>
+                                    <p style={{ fontSize: 12.5, color: 'rgba(180,100,0,0.85)', margin: 0, lineHeight: 1.55 }}>
+                                        Upload at least one document — resume, LinkedIn export, or portfolio — so Wand can build your profile before analysis.
+                                    </p>
+                                    <button
+                                        onClick={() => { resetForm(); onClose(); router.push('/profile'); }}
+                                        style={{
+                                            marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 5,
+                                            height: 28, padding: '0 12px',
+                                            background: 'rgba(245,158,11,0.15)', color: 'rgba(180,100,0,1)',
+                                            border: '1px solid rgba(245,158,11,0.4)', borderRadius: 'var(--radius-sm)',
+                                            fontSize: 12.5, fontWeight: 500, cursor: 'pointer',
+                                        }}
+                                    >
+                                        Go to Profile →
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
                         {/* ── Footer ─────────────────────────────────────── */}
                         <div
                             className="flex items-center justify-end gap-2 px-5 py-4"
@@ -413,11 +470,11 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
                             <button
                                 onClick={handleClose}
                                 disabled={isCreating}
-                                className="px-3 py-1.5 text-sm rounded-md cursor-pointer transition-colors"
                                 style={{
-                                    color: 'var(--text-2)',
-                                    background: 'none',
-                                    border: '1px solid var(--border)',
+                                    height: 32, padding: '0 14px', fontSize: 13, fontWeight: 500,
+                                    color: 'var(--text-2)', background: 'var(--surface)',
+                                    border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)',
+                                    cursor: 'pointer', transition: 'all 140ms ease',
                                 }}
                             >
                                 Cancel
@@ -427,29 +484,33 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
                                 <button
                                     onClick={handleCreateJob}
                                     disabled={!canAnalyze || isCreating}
-                                    className="px-4 py-1.5 text-sm rounded-md cursor-pointer transition-colors"
                                     style={{
-                                        background: canAnalyze && !isCreating ? 'var(--accent)' : 'var(--surface)',
+                                        height: 32, padding: '0 14px', fontSize: 13, fontWeight: 500,
+                                        background: canAnalyze && !isCreating ? 'var(--accent)' : 'var(--surface-2)',
                                         color: canAnalyze && !isCreating ? 'var(--on-accent)' : 'var(--text-3)',
                                         border: '1px solid transparent',
+                                        borderRadius: 'var(--radius-sm)',
                                         cursor: canAnalyze && !isCreating ? 'pointer' : 'not-allowed',
+                                        transition: 'all 140ms ease',
                                     }}
                                 >
-                                    {isCreating ? 'Starting analysis...' : 'Analyze Job'}
+                                    {isCreating ? 'Analyzing…' : 'Start analysis'}
                                 </button>
                             ) : (
                                 <button
                                     onClick={handleTrackJob}
                                     disabled={!canTrack || isCreating}
-                                    className="px-4 py-1.5 text-sm rounded-md cursor-pointer transition-colors"
                                     style={{
-                                        background: canTrack && !isCreating ? 'var(--accent)' : 'var(--surface)',
+                                        height: 32, padding: '0 14px', fontSize: 13, fontWeight: 500,
+                                        background: canTrack && !isCreating ? 'var(--accent)' : 'var(--surface-2)',
                                         color: canTrack && !isCreating ? 'var(--on-accent)' : 'var(--text-3)',
                                         border: '1px solid transparent',
+                                        borderRadius: 'var(--radius-sm)',
                                         cursor: canTrack && !isCreating ? 'pointer' : 'not-allowed',
+                                        transition: 'all 140ms ease',
                                     }}
                                 >
-                                    {isCreating ? 'Adding...' : 'Add Job'}
+                                    {isCreating ? 'Tracking…' : 'Track job'}
                                 </button>
                             )}
                         </div>

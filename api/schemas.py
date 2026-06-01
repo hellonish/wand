@@ -39,7 +39,9 @@ class UserBase(BaseModel):
 class UserResponse(UserBase):
     id: UUID
     created_at: datetime
-    
+    has_profile: bool = False
+    onboarding_completed: bool = False
+
     class Config:
         from_attributes = True
 
@@ -101,6 +103,7 @@ class JobListResponse(BaseModel):
     final_score: Optional[float] = None
     company_website: Optional[str] = None
     joblens_session_id: Optional[str] = None
+    current_step: Optional[int] = None
     created_at: datetime
 
     class Config:
@@ -235,7 +238,8 @@ class JobLensSessionResponse(BaseModel):
     profile_snapshot: Optional[Dict[str, Any]] = None
     job_description: Optional[Dict[str, Any]] = None
     company_intel: Optional[Dict[str, Any]] = None
-    match_analysis: Optional[Dict[str, Any]] = None
+    match_analysis: Optional[Dict[str, Any]] = None   # Phase A: score + evidence
+    resume_actions: Optional[Dict[str, Any]] = None   # Phase B: tailored resume actions
     reachout: Optional[Dict[str, Any]] = None
     raw_jd_text: Optional[str] = None
     company_website: Optional[str] = None

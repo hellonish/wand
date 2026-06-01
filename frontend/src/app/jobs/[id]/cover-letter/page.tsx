@@ -9,7 +9,7 @@ import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 
 const MODES = [
-    { id: 'auto', label: 'Auto-Detect', desc: 'AI analyzes the JD and picks the best tone' },
+    { id: 'auto', label: 'Auto-Detect', desc: 'AI analyzes the job description and picks the best tone' },
     { id: 'storyline', label: 'Storyline', desc: 'Narrative arc driven by your career journey' },
     { id: 'disruptive', label: 'Disruptive', desc: 'Bold, unconventional, challenges the norm' },
     { id: 'regular', label: 'Regular', desc: 'Traditional professional and polished' },
@@ -242,9 +242,12 @@ export default function CoverLetterPage({ params }: { params: Promise<{ id: stri
                             </button>
                             <button
                                 onClick={handleDownload}
-                                className="px-4 py-2 text-sm font-medium text-[var(--on-accent)] bg-[var(--accent)] hover:opacity-90 rounded-lg transition-colors cursor-pointer shadow-lg shadow-none"
+                                className="px-5 py-2.5 text-sm font-semibold text-[var(--on-accent)] bg-[var(--accent)] hover:opacity-90 active:scale-95 rounded-lg transition-all cursor-pointer flex items-center gap-2 shadow-md shadow-[var(--accent)]/30 ring-2 ring-[var(--accent)]/20"
                             >
-                                Download as PDF
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17v3a2 2 0 002 2h14a2 2 0 002-2v-3" />
+                                </svg>
+                                Download PDF
                             </button>
                         </div>
                     )}
@@ -416,7 +419,7 @@ export default function CoverLetterPage({ params }: { params: Promise<{ id: stri
                                 </div>
 
                                 {/* Letter Content */}
-                                <div className="flex-1 p-8 pt-4 print:p-0 font-serif text-sm leading-relaxed print:text-[11pt] print:leading-[1.6]">
+                                <div className="flex-1 p-8 pr-14 pt-4 print:p-0 font-serif text-sm leading-relaxed print:text-[11pt] print:leading-[1.6]">
                                     {isEditing ? (
                                         <textarea
                                             value={editedText}

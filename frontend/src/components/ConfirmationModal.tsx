@@ -31,7 +31,6 @@ export default function ConfirmationModal({
     const [confirmWorking, setConfirmWorking] = useState(false);
 
     useEffect(() => {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
         setMounted(true);
         return () => setMounted(false);
     }, []);
@@ -103,11 +102,17 @@ export default function ConfirmationModal({
                                     onClick={onClose}
                                     onMouseEnter={() => setCancelHovered(true)}
                                     onMouseLeave={() => setCancelHovered(false)}
-                                    className="text-sm px-3 py-1.5 rounded-md cursor-pointer transition-colors"
                                     style={{
+                                        height: 32,
+                                        padding: '0 12px',
+                                        fontSize: 13,
+                                        fontWeight: 500,
+                                        borderRadius: 'var(--radius-sm)',
+                                        border: 'none',
+                                        cursor: 'pointer',
+                                        transition: 'all 140ms ease',
                                         color: cancelHovered ? 'var(--text-1)' : 'var(--text-2)',
                                         background: cancelHovered ? 'var(--hover)' : 'transparent',
-                                        border: 'none',
                                     }}
                                 >
                                     {cancelLabel}
@@ -128,8 +133,17 @@ export default function ConfirmationModal({
                                     }}
                                     onMouseEnter={() => setConfirmHovered(true)}
                                     onMouseLeave={() => setConfirmHovered(false)}
-                                    className="text-sm px-3 py-1.5 rounded-md cursor-pointer transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                                    style={confirmStyle}
+                                    style={{
+                                        height: 32,
+                                        padding: '0 12px',
+                                        fontSize: 13,
+                                        fontWeight: 500,
+                                        borderRadius: 'var(--radius-sm)',
+                                        cursor: confirmWorking ? 'not-allowed' : 'pointer',
+                                        opacity: confirmWorking ? 0.5 : 1,
+                                        transition: 'all 140ms ease',
+                                        ...confirmStyle,
+                                    }}
                                 >
                                     {confirmWorking ? '…' : confirmLabel}
                                 </button>

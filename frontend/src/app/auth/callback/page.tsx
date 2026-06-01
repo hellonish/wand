@@ -21,7 +21,10 @@ function CallbackHandler() {
 
         if (token) {
             login(token)
-                .then(() => router.push('/dashboard'))
+                .then(() => {
+                    const { onboardingComplete } = useStore.getState();
+                    router.push(onboardingComplete ? '/dashboard' : '/onboarding');
+                })
                 .catch((err) => setError(err.message));
         } else {
             setError('No token received');

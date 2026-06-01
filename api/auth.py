@@ -57,16 +57,17 @@ def verify_token(token: str) -> Optional[dict]:
 
 
 def get_or_create_user(db: Session, email: str, name: str, picture: str = None) -> User:
-    """Get existing user or create new one."""
-    user = db.query(User).filter(User.email == email).first()
+    """Get existing active user or create new one. Deleted accounts are never restored."""
+    user = db.query(User).filter(User.email == email, User.is_deleted == False).first()
     if not user:
         user = User(email=email, name=name, profile_picture=picture)
         db.add(user)
         db.commit()
         db.refresh(user)
     else:
-        # Update profile picture if changed
-        if picture and user.profile_picture != picture:
+        # Only sync Google's picture if the user hasn't set a custom local avatar
+        has_custom_avatar = user.profile_picture and user.profile_picture.startswith("/uploads/avatars/")
+        if picture and not has_custom_avatar and user.profile_picture != picture:
             user.profile_picture = picture
             db.commit()
     return user
@@ -88,11 +89,11 @@ async def get_current_user(
     
     user_id = payload.get("sub")
     user = db.query(User).filter(User.id == user_id).first()
-    
-    if not user:
+
+    if not user or user.is_deleted:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found"
         )
-    
+
     return user

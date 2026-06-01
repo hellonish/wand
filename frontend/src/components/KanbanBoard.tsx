@@ -3,7 +3,6 @@
 import { useState, useCallback, type DragEvent } from 'react';
 import type { JobListItem } from '@/utils/api';
 import KanbanCard from './KanbanCard';
-import { motion, AnimatePresence } from 'framer-motion';
 
 interface KanbanBoardProps {
   jobs: JobListItem[];
@@ -13,153 +12,143 @@ interface KanbanBoardProps {
   onArchive: (jobId: string) => void;
 }
 
-/** Column definitions — left to right */
 const COLUMNS = [
-  { status: 'tracked', label: 'Tracked', dotColor: 'var(--text-3)' },
-  { status: 'applied', label: 'Applied', dotColor: 'var(--accent)' },
-  { status: 'interview', label: 'Interview', dotColor: 'var(--warning)' },
-  { status: 'offer', label: 'Offer', dotColor: 'var(--success)' },
-  { status: 'rejected', label: 'Rejected', dotColor: 'var(--text-3)' },
+  { status: 'tracked',   label: 'Tracked',   tone: 'neutral' },
+  { status: 'applied',   label: 'Applied',   tone: 'accent' },
+  { status: 'interview', label: 'Interview', tone: 'good' },
+  { status: 'offer',     label: 'Offer',     tone: 'strong' },
+  { status: 'rejected',  label: 'Rejected',  tone: 'weak' },
 ] as const;
 
 type ColumnStatus = (typeof COLUMNS)[number]['status'];
 
+function colDotColor(tone: string): string {
+  if (tone === 'neutral') return 'var(--text-3)';
+  if (tone === 'accent')  return 'var(--accent)';
+  return `var(--${tone})`;
+}
+
 export default function KanbanBoard({ jobs, onStatusChange, onJobClick, onDelete, onArchive }: KanbanBoardProps) {
-  // Track which column is currently being dragged over for visual feedback
   const [dragOverColumn, setDragOverColumn] = useState<ColumnStatus | null>(null);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
 
   // Group jobs by status
   const jobsByStatus = new Map<ColumnStatus, JobListItem[]>();
-  for (const col of COLUMNS) {
-    jobsByStatus.set(col.status, []);
-  }
+  for (const col of COLUMNS) jobsByStatus.set(col.status, []);
   for (const job of jobs) {
-    const colStatus = job.status as ColumnStatus;
-    if (jobsByStatus.has(colStatus)) {
-      jobsByStatus.get(colStatus)!.push(job);
-    }
-    // Jobs with statuses like 'queued' or 'analyzing' are not shown in columns
+    const key = job.status as ColumnStatus;
+    if (jobsByStatus.has(key)) jobsByStatus.get(key)!.push(job);
   }
 
-  const handleDragOver = useCallback(
-    (e: DragEvent<HTMLDivElement>, status: ColumnStatus) => {
-      e.preventDefault();
-      e.dataTransfer.dropEffect = 'move';
-      setDragOverColumn(status);
-    },
-    [],
-  );
+  const handleDragOver = useCallback((e: DragEvent<HTMLDivElement>, status: ColumnStatus) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverColumn(status);
+  }, []);
 
-  const handleDragLeave = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      // Only clear if leaving the column element itself (not entering a child)
-      const rect = e.currentTarget.getBoundingClientRect();
-      const { clientX, clientY } = e;
-      if (
-        clientX < rect.left ||
-        clientX > rect.right ||
-        clientY < rect.top ||
-        clientY > rect.bottom
-      ) {
-        setDragOverColumn(null);
-      }
-    },
-    [],
-  );
-
-  const handleDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>, columnStatus: ColumnStatus) => {
-      e.preventDefault();
+  const handleDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const { clientX, clientY } = e;
+    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
       setDragOverColumn(null);
+    }
+  }, []);
 
-      const jobId = e.dataTransfer.getData('jobId');
-      const currentStatus = e.dataTransfer.getData('currentStatus');
-
-      if (jobId && currentStatus !== columnStatus) {
-        onStatusChange(jobId, columnStatus);
-      }
-    },
-    [onStatusChange],
-  );
+  const handleDrop = useCallback((e: DragEvent<HTMLDivElement>, columnStatus: ColumnStatus) => {
+    e.preventDefault();
+    setDragOverColumn(null);
+    setDraggingId(null);
+    const jobId = e.dataTransfer.getData('jobId');
+    const currentStatus = e.dataTransfer.getData('currentStatus');
+    if (jobId && currentStatus !== columnStatus) {
+      onStatusChange(jobId, columnStatus);
+    }
+  }, [onStatusChange]);
 
   return (
-    <div
-      className="flex gap-3 overflow-x-auto pb-4"
-      style={{ minHeight: 'calc(100vh - 200px)' }}
-    >
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: `repeat(${COLUMNS.length}, minmax(200px, 1fr))`,
+      gap: 10,
+      alignItems: 'flex-start',
+    }}>
       {COLUMNS.map((col) => {
         const columnJobs = jobsByStatus.get(col.status) ?? [];
-        const isDragOver = dragOverColumn === col.status;
+        const isHover = dragOverColumn === col.status;
 
         return (
           <div
             key={col.status}
-            className="flex flex-col rounded-xl flex-shrink-0 transition-colors duration-200"
-            style={{
-              width: 268,
-              minHeight: '100%',
-              background: isDragOver ? 'var(--hover)' : 'var(--surface)',
-              border: `1px solid ${isDragOver ? 'var(--accent)' : 'var(--border)'}`,
-            }}
             onDragOver={(e) => handleDragOver(e, col.status)}
             onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, col.status)}
+            style={{
+              background: isHover ? 'var(--accent-soft)' : 'var(--bg-tint)',
+              border: `1px ${isHover ? 'dashed' : 'solid'} ${isHover ? 'var(--accent)' : 'var(--border-soft)'}`,
+              borderRadius: 'var(--radius)',
+              padding: 10,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              minHeight: 200,
+              transition: 'background 140ms, border-color 140ms',
+            }}
           >
             {/* Column header */}
-            <div
-              className="flex items-center gap-2 px-3 py-2.5 flex-shrink-0"
-              style={{ borderBottom: '1px solid var(--border)' }}
-            >
-              {/* Colored dot */}
-              <span
-                className="w-2 h-2 rounded-full flex-shrink-0"
-                style={{ background: col.dotColor }}
-              />
-              {/* Label */}
-              <span
-                className="text-xs font-medium"
-                style={{ color: 'var(--text-2)' }}
-              >
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '2px 4px',
+            }}>
+              <span style={{
+                width: 7,
+                height: 7,
+                borderRadius: 999,
+                background: colDotColor(col.tone),
+                opacity: 0.75,
+                flexShrink: 0,
+              }} />
+              <span style={{
+                fontSize: 12.5,
+                fontWeight: 500,
+                color: 'var(--text)',
+              }}>
                 {col.label}
               </span>
-              {/* Count badge */}
-              <span
-                className="text-xs tabular-nums px-1.5 py-0.5 rounded-full ml-auto"
-                style={{
-                  background: 'var(--card)',
-                  color: 'var(--text-3)',
-                  border: '1px solid var(--border)',
-                }}
-              >
+              <span style={{
+                fontSize: 11,
+                fontFamily: 'var(--font-mono)',
+                color: 'var(--text-3)',
+              }}>
                 {columnJobs.length}
               </span>
             </div>
 
-            {/* Cards area */}
-            <div className="flex flex-col gap-2 p-2 flex-1">
-              {columnJobs.length === 0 ? (
-                // Empty state
-                <div className="flex items-center justify-center py-10">
-                  <span
-                    className="text-xs"
-                    style={{ color: 'var(--text-3)', opacity: 0.6 }}
-                  >
-                    No jobs
-                  </span>
+            {/* Cards */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--gap)' }}>
+              {columnJobs.map((job) => (
+                <KanbanCard
+                  key={job.id}
+                  job={job}
+                  onClick={onJobClick}
+                  onDelete={onDelete}
+                  onArchive={onArchive}
+                />
+              ))}
+              {columnJobs.length === 0 && (
+                <div style={{
+                  padding: '18px 8px',
+                  textAlign: 'center',
+                  fontSize: 11,
+                  color: 'var(--text-4)',
+                  border: '1px dashed var(--border-soft)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontFamily: 'var(--font-mono)',
+                  letterSpacing: '0.02em',
+                }}>
+                  nothing here
                 </div>
-              ) : (
-                <AnimatePresence initial={false}>
-                  {columnJobs.map((job) => (
-                    <KanbanCard
-                      key={job.id}
-                      job={job}
-                      onStatusChange={onStatusChange}
-                      onClick={onJobClick}
-                      onDelete={onDelete}
-                      onArchive={onArchive}
-                    />
-                  ))}
-                </AnimatePresence>
               )}
             </div>
           </div>

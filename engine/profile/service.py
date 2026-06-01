@@ -17,7 +17,7 @@ from .models import (
     UnifiedProfile,
     UnifiedWorkExperienceItem,
 )
-from engine.xai_client import XAIStructuredClient
+from engine.providers import XAIClient
 
 
 CONTENT_TYPES = {
@@ -69,7 +69,7 @@ class ProfileService:
                 declared_source_type=source_type,
             )
         )
-        return extract_profile_sections([document], self.llm or XAIStructuredClient())
+        return extract_profile_sections([document], self.llm or XAIClient())
 
     def extract_from_files(
         self,
@@ -84,7 +84,7 @@ class ProfileService:
             declared = source_types.get(path.name) if source_types else None
             inputs.append(build_profile_input(path, declared))
         documents = ingest_documents(inputs)
-        return extract_profile_sections(documents, self.llm or XAIStructuredClient())
+        return extract_profile_sections(documents, self.llm or XAIClient())
 
     def parse_upload(
         self,

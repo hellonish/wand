@@ -2,10 +2,11 @@
 Wand API - FastAPI Backend
 """
 
+import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-import os
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -38,6 +39,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve uploaded files (avatars, profile docs, etc.)
+os.makedirs("api/uploads", exist_ok=True)
+app.mount("/uploads", StaticFiles(directory="api/uploads"), name="uploads")
 
 # Include routers
 app.include_router(auth.router)

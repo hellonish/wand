@@ -7,7 +7,7 @@ interface DataViewerModalProps {
     isOpen: boolean;
     onClose: () => void;
     title: string;
-    data: any;
+    data: unknown;
 }
 
 export default function DataViewerModal({ isOpen, onClose, title, data }: DataViewerModalProps) {
@@ -52,8 +52,16 @@ export default function DataViewerModal({ isOpen, onClose, title, data }: DataVi
                                     navigator.clipboard.writeText(JSON.stringify(data, null, 2));
                                     alert('Copied to clipboard!');
                                 }}
-                                className="p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] rounded-lg transition-colors"
                                 title="Copy JSON"
+                                style={{
+                                    width: 32, height: 32, padding: 0,
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                    borderRadius: 'var(--radius)',
+                                    color: 'var(--text-2)',
+                                    transition: 'all 140ms ease',
+                                }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--surface-2)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text)'; }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-2)'; }}
                             >
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
@@ -61,7 +69,15 @@ export default function DataViewerModal({ isOpen, onClose, title, data }: DataVi
                             </button>
                             <button
                                 onClick={onClose}
-                                className="p-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] rounded-lg transition-colors"
+                                style={{
+                                    width: 32, height: 32, padding: 0,
+                                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                    borderRadius: 'var(--radius)',
+                                    color: 'var(--text-2)',
+                                    transition: 'all 140ms ease',
+                                }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = 'var(--surface-2)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text)'; }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-2)'; }}
                             >
                                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

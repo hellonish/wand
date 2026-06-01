@@ -101,6 +101,13 @@ class ActionPriority(str, Enum):
     LOW = "low"
 
 
+class ResumeCandidateInput(StrictJobMatchModel):
+    """One resume file available for AI selection."""
+
+    filename: str
+    text: str
+
+
 class JobMatchRequest(StrictJobMatchModel):
     """Inputs needed to compare one profile against one broken-down JD."""
 
@@ -108,7 +115,11 @@ class JobMatchRequest(StrictJobMatchModel):
     job_description: JobDescriptionBreakdownResult
     base_resume_text: Optional[str] = Field(
         default=None,
-        description="Optional current resume text. If absent, actions should target profile evidence rather than exact resume lines.",
+        description="Single resume text (legacy / single-file path). Ignored when resume_candidates is non-empty.",
+    )
+    resume_candidates: List[ResumeCandidateInput] = Field(
+        default_factory=list,
+        description="All resume files tagged by the user. AI picks the best one for this JD.",
     )
 
 
@@ -169,15 +180,6 @@ class ResponsibilityMatch(StrictJobMatchModel):
     action_hint: Optional[str] = None
 
 
-class DomainMatch(StrictJobMatchModel):
-    """Domain or role-family match explanation."""
-
-    target: str
-    match_level: MatchLevel = MatchLevel.UNKNOWN
-    profile_evidence: List[EvidenceItem] = Field(default_factory=list)
-    rationale: Optional[str] = None
-
-
 class ResumeAction(StrictJobMatchModel):
     """One actionable resume recommendation."""
 
@@ -214,7 +216,6 @@ class JobMatchResult(StrictJobMatchModel):
     constraints: List[ConstraintMatch] = Field(default_factory=list)
     skill_matches: List[SkillMatch] = Field(default_factory=list)
     responsibility_matches: List[ResponsibilityMatch] = Field(default_factory=list)
-    domain_matches: List[DomainMatch] = Field(default_factory=list)
     update_actions: List[ResumeAction] = Field(default_factory=list)
     replace_actions: List[ResumeAction] = Field(default_factory=list)
     delete_actions: List[ResumeAction] = Field(default_factory=list)
@@ -226,4 +227,55 @@ class JobMatchLLMResponse(StrictJobMatchModel):
     """Structured response expected from the matching LLM."""
 
     result: JobMatchResult
+    warnings: List[str] = Field(default_factory=list)
+
+
+# ─── Two-phase split models ───────────────────────────────────────────────────
+# Phase A: scoring + evidence (fits within 8K output tokens).
+# Phase B: resume actions (consumes Phase A result as context).
+# Both are merged into JobMatchResult by the caller.
+
+class JobMatchScore(StrictJobMatchModel):
+    """Phase A output — scoring and evidence only, no resume actions."""
+
+    job_title: Optional[str] = None
+    company_name: Optional[str] = None
+    role_family: Optional[str] = None
+    summary: JobMatchSummary
+    score_components: List[ScoreComponent] = Field(default_factory=list)
+    constraints: List[ConstraintMatch] = Field(default_factory=list)
+    skill_matches: List[SkillMatch] = Field(default_factory=list)
+    responsibility_matches: List[ResponsibilityMatch] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+
+
+class JobMatchScoreLLMResponse(StrictJobMatchModel):
+    """LLM wrapper for Phase A."""
+
+    result: JobMatchScore
+    warnings: List[str] = Field(default_factory=list)
+
+
+class ResumeActions(StrictJobMatchModel):
+    """Phase B output — resume tailoring actions."""
+
+    selected_resume_filename: Optional[str] = Field(
+        default=None,
+        description="Filename of the resume chosen by the AI when multiple candidates were provided.",
+    )
+    selected_resume_text: Optional[str] = Field(
+        default=None,
+        description="Full extracted text of the selected resume. Populated server-side after AI selection; not sent to the LLM.",
+    )
+    update_actions: List[ResumeAction] = Field(default_factory=list)
+    replace_actions: List[ResumeAction] = Field(default_factory=list)
+    delete_actions: List[ResumeAction] = Field(default_factory=list)
+    selected_actions: List[ResumeAction] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+
+
+class ResumeActionsLLMResponse(StrictJobMatchModel):
+    """LLM wrapper for Phase B."""
+
+    result: ResumeActions
     warnings: List[str] = Field(default_factory=list)

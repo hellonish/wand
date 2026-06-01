@@ -3,7 +3,13 @@
 import json
 from typing import Dict, List, Sequence
 
-from .models import GatedSearchResult, ReachoutInput, ReachoutSearchPlan, ReachoutValidationResult
+from .models import (
+    GatedSearchResult,
+    ReachoutCandidateValidationLLMResponse,
+    ReachoutInput,
+    ReachoutQueryPlanLLMResponse,
+    ReachoutSearchPlan,
+)
 
 
 def build_query_planner_messages(reachout_input: ReachoutInput) -> List[Dict[str, str]]:
@@ -31,7 +37,7 @@ def build_candidate_validator_messages(
 def _query_planner_system_prompt() -> str:
     """Return the query planner contract."""
 
-    schema = json.dumps(ReachoutSearchPlan.model_json_schema(), indent=2)
+    schema = json.dumps(ReachoutQueryPlanLLMResponse.model_json_schema(), separators=(',', ':'))
     return f"""
 You are `reachout_query_planner`, the first LLM call in a two-call public reachout discovery pipeline.
 
@@ -39,7 +45,7 @@ Your responsibility:
 Generate precise Google-compatible search queries that are likely to find public LinkedIn `/in/` person profiles for people at the target company. Do not identify or invent people. Only create search queries.
 
 Output contract:
-- Return only data that fits the supplied structured output model.
+- Return a JSON object matching the supplied `ReachoutQueryPlanLLMResponse` schema. The search plan goes under `search_plan`.
 - Every query should target public profile search results, usually with `site:linkedin.com/in`.
 - Prefer high-precision queries over broad noisy queries.
 - Use the company name, company website/domain, role context, location, and target personas when supplied.
@@ -80,12 +86,15 @@ Structured output schema:
 def _candidate_validator_system_prompt() -> str:
     """Return the candidate validation contract."""
 
-    schema = json.dumps(ReachoutValidationResult.model_json_schema(), indent=2)
+    schema = json.dumps(ReachoutCandidateValidationLLMResponse.model_json_schema(), separators=(',', ':'))
     return f"""
 You are `reachout_candidate_validator`, the second LLM call in a two-call public reachout discovery pipeline.
 
 Your responsibility:
 Validate and normalize pre-gated public search results into high-confidence reachout candidates. Prefer returning fewer accurate contacts over filling the requested count with weak guesses.
+
+Output contract:
+- Return a JSON object matching the supplied `ReachoutCandidateValidationLLMResponse` schema. Validation output goes under `validation`.
 
 Hard acceptance gates:
 - Accept only public LinkedIn `/in/` person profile URLs unless the input explicitly asks for other sources.
@@ -123,7 +132,7 @@ def _query_planner_user_prompt(reachout_input: ReachoutInput) -> str:
     return "\n".join(
         [
             "Generate a high-precision public search plan for reachout candidates.",
-            json.dumps(reachout_input.model_dump(mode="json"), indent=2),
+            json.dumps(reachout_input.model_dump(mode="json")),
         ]
     )
 
@@ -144,6 +153,6 @@ def _candidate_validator_user_prompt(
         [
             "Validate and normalize these pre-gated search results into reachout candidates.",
             "Apply the hard gates strictly. Prefer fewer high-confidence candidates over noisy contacts.",
-            json.dumps(payload, indent=2),
+            json.dumps(payload),
         ]
     )

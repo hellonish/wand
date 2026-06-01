@@ -3,6 +3,12 @@
 import json
 from typing import Dict, List, Sequence
 
+# Maximum characters of document text sent to the LLM per document.
+# A well-formatted resume is ~3–6 KB of text. 20 000 chars ≈ 5 000 tokens,
+# which is plenty for any real resume while preventing 4 MB PDFs from
+# blowing up the prompt and triggering provider spend-limit 403s.
+_MAX_CHARS_PER_DOCUMENT = 20_000
+
 from .models import IngestedProfileDocument, LongFormProfileSections, NormalizedProfileComponents
 
 
@@ -322,11 +328,23 @@ def _render_document_evidence(documents: Sequence[IngestedProfileDocument]) -> s
                 label = f" label={link.label}" if link.label else ""
                 context = f" context={link.context}" if link.context else ""
                 parts.append(f"-{link_id} url={link.url}{source}{label}{block}{page}{heading}{context}")
+
+        # Accumulate text blocks up to the per-document character budget.
         parts.append("TEXT BLOCKS:")
+        chars_used = 0
         for block in document.text_blocks:
             page = f" page={block.page_number}" if block.page_number else ""
             heading = f" heading_path={' > '.join(block.heading_path)}" if block.heading_path else ""
-            parts.append(f"[{block.block_id}{page}{heading}]\n{block.text}")
+            entry = f"[{block.block_id}{page}{heading}]\n{block.text}"
+            if chars_used + len(entry) > _MAX_CHARS_PER_DOCUMENT:
+                parts.append(
+                    f"[TRUNCATED — document exceeded {_MAX_CHARS_PER_DOCUMENT:,} char limit; "
+                    "remaining blocks omitted. Extract from the content above.]"
+                )
+                break
+            parts.append(entry)
+            chars_used += len(entry)
+
     return "\n\n".join(parts)
 
 

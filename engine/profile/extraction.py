@@ -5,6 +5,7 @@ from typing import Any, List, Sequence
 
 from pydantic import Field
 
+import engine.inference as inference
 from engine.utils import dedupe_warning_strings
 
 from .models import (
@@ -16,7 +17,6 @@ from .models import (
     ProfileParserLLMResponse,
     StrictProfileModel,
 )
-from .prompts import build_long_form_merge_messages, build_long_form_section_messages, build_profile_parser_messages
 
 
 LONG_FORM_SECTION_FIELDS = (
@@ -44,12 +44,7 @@ class ProfileExtractor:
     def extract(self, documents: List[IngestedProfileDocument]) -> ProfileExtractionResult:
         """Extract components through the LLM using a typed response model."""
 
-        response = self.llm.complete(
-            response_model=ProfileParserLLMResponse,
-            messages=build_profile_parser_messages(documents),
-            temperature=0.0,
-            max_tokens=24000,
-        )
+        response = inference.parse_profile(self.llm, documents)
         long_form = self._extract_long_form_sections(documents)
         warnings = [warning for document in documents for warning in document.warnings]
         warnings.extend(response.warnings)
@@ -83,12 +78,7 @@ class ProfileExtractor:
         sections = {field: [] for field in LONG_FORM_SECTION_FIELDS}
         warnings: List[str] = []
         for document in documents:
-            response = self.llm.complete(
-                response_model=LongFormProfileSections,
-                messages=build_long_form_section_messages([document]),
-                temperature=0.0,
-                max_tokens=24000,
-            )
+            response = inference.extract_long_form_sections(self.llm, document)
             warnings.extend(response.warnings)
             for field in sections:
                 sections[field].extend(getattr(response, field))
@@ -102,12 +92,7 @@ class ProfileExtractor:
 
         if not any(getattr(sections, field) for field in LONG_FORM_SECTION_FIELDS):
             return sections
-        response = self.llm.complete(
-            response_model=LongFormProfileSections,
-            messages=build_long_form_merge_messages(sections),
-            temperature=0.0,
-            max_tokens=24000,
-        )
+        response = inference.merge_long_form_versions(self.llm, sections)
         exact_deduped = {field: self._dedupe_exact_records(getattr(response, field)) for field in LONG_FORM_SECTION_FIELDS}
         return LongFormProfileSections(**exact_deduped, warnings=dedupe_warning_strings([*sections.warnings, *response.warnings]))
 

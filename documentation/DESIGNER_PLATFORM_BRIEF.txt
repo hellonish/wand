@@ -1,0 +1,994 @@
+WAND PLATFORM DESIGN BRIEF
+Technical product brief for UI/UX redesign
+
+Document purpose
+This document describes Wand as a product, system, and interface surface so a product designer or design engineer can reinvent the frontend without losing the core platform requirements. It is intentionally not a visual redesign proposal. It defines what the platform does, who it serves, what data exists, which workflows matter, what states must be represented, and where the current system has hard technical constraints.
+
+
+1. Platform summary
+
+Wand is an AI career intelligence platform for managing job applications, understanding job fit, improving career material, and generating cover letters. It combines:
+
+- A profile/document system for resumes, LinkedIn exports, portfolios, and other career files.
+- An AI analysis pipeline called JobLens.
+- A job tracking system with user-managed application statuses.
+- A cover letter generation workspace.
+- A realtime frontend that can display AI pipeline progress as each analysis module completes.
+
+At a surface level, Wand is a job application tracker. Technically, it is a structured AI workflow product. A user gives the system career documents and job descriptions. The backend extracts structured profile data, parses the job description, gathers company intelligence, scores profile-to-job fit, identifies gaps, recommends resume actions, and finds reachout targets. The frontend must make this intelligence understandable and actionable.
+
+The redesign should treat Wand as a professional workbench, not a marketing website. Users return to it repeatedly while applying for jobs. It should feel fast, calm, precise, inspectable, and credible.
+
+
+2. Primary users
+
+Primary user
+- A job seeker actively applying to multiple roles.
+- They have one or more resumes, a LinkedIn profile, portfolio pages, GitHub links, and notes that are spread across documents.
+- They want to know which jobs are worth applying to, how well they match, what to improve, and how to track each opportunity.
+
+Secondary user
+- A career switcher or early-career candidate.
+- They need explicit guidance on missing skills, resume gaps, and how to tell their story.
+
+Power user
+- A high-volume applicant who wants dense job tracking, filtering, quick comparisons, and minimal friction.
+
+Designer implication
+- The product should support both "explain this to me" and "let me scan 30 jobs quickly."
+- Dense, well-structured information matters more than decorative visual weight.
+- Trust matters: show sources, warnings, uncertainty, evidence, and pipeline state.
+
+
+3. Core product promise
+
+Wand helps users answer five questions:
+
+1. What does this job actually require?
+2. How well do I match this role?
+3. What should I change in my profile or resume to improve my odds?
+4. Who should I reach out to?
+5. Where is this application in my workflow?
+
+Every major screen should support at least one of these questions.
+
+
+4. System architecture overview
+
+Frontend
+- Next.js App Router.
+- TypeScript.
+- Zustand persisted client state.
+- Framer Motion for UI transitions.
+- Native WebSocket hook for realtime JobLens updates.
+
+Backend
+- FastAPI REST API.
+- Google OAuth authentication.
+- JWT bearer token for authenticated HTTP calls.
+- SQLite via SQLAlchemy.
+- FastAPI BackgroundTasks plus asyncio for long-running AI work.
+
+AI engine
+- Python engine modules.
+- Structured Pydantic outputs from LLM calls.
+- OpenAI-compatible LLM client abstraction.
+- Gemini, Grok/xAI, and DeepSeek provider support in the engine.
+- PyMuPDF and document parsing utilities for profile material.
+- Company website scraping for company intelligence.
+
+Integration contract
+- Local API base URL: http://localhost:8000
+- API docs: GET /docs
+- Authenticated requests require Authorization: Bearer <jwt>
+- WebSocket endpoint: ws://localhost:8000/ws/{token}
+- IDs are UUID strings.
+- Datetimes are ISO-like strings.
+- Optional fields may be null or omitted.
+
+
+5. Main navigation and product areas
+
+The app currently has these major areas:
+
+- Home / Login
+- Dashboard
+- Jobs
+- Job Detail
+- Profile
+- Cover Letters
+- Quick Cover Letter
+- Job-specific Cover Letter
+- Settings
+- System Design
+
+Recommended redesign information architecture:
+
+- Dashboard: operational command center.
+- Jobs: searchable application database.
+- Job Detail: analysis and action workspace for one opportunity.
+- Profile: career source-of-truth and document management.
+- Cover Letters: writing workspace and generated letter history.
+- Settings: account, theme, model/provider preferences if exposed.
+
+The designer should consider a persistent global navigation that keeps these areas visible without over-dominating the workspace.
+
+
+6. Authentication and onboarding requirements
+
+Authentication model
+- Users authenticate with Google OAuth.
+- The frontend redirects users to the backend OAuth endpoint.
+- The backend redirects back to /auth/callback with a JWT token or an error.
+- The frontend stores the token in local storage.
+- Authenticated screens must redirect unauthenticated users to the home page.
+
+Onboarding requirements
+- The user should understand that job analysis depends on profile data.
+- The profile setup path should be prominent after first login.
+- Empty states should direct users to upload career documents or add a job.
+- The product should distinguish between "manual job tracking" and "AI analysis."
+
+Home/login screen requirements
+- Explain the product in practical terms.
+- Provide a Google sign-in action.
+- Avoid long marketing pages if the user is already authenticated.
+
+
+7. Profile system
+
+Purpose
+The profile area is the career source of truth. It collects uploaded files and context, then creates a unified profile for JobLens analysis.
+
+Supported uploaded file types
+- Resume
+- LinkedIn
+- Portfolio
+- Other
+
+Supported file extensions
+- PDF
+- HTML / HTM
+- TXT
+- DOC / DOCX
+
+Important constraints
+- Max upload size is 10 MB.
+- Uploaded files may have parsed data or may be uploaded but not parsed.
+- The system supports per-file additional context.
+- The system also supports global additional context.
+- Unified profile generation can be slow.
+
+Profile data model
+The most important frontend profile object is UnifiedProfile:
+
+- basics
+  - name
+  - title
+  - summary
+  - contact_info
+  - location
+- work_experience
+  - job title
+  - company
+  - dates
+  - location
+  - description bullets
+  - achievements
+- skills
+- education
+- dynamic_sections
+
+Profile page requirements
+- Upload career files.
+- Show a paginated file inventory.
+- Show file type, filename, file size, parse status, created date, and updated date.
+- Allow editing file type and per-file context.
+- Allow viewing extracted data for a file.
+- Allow preview/download where supported.
+- Allow file deletion with confirmation.
+- Provide a global "Additional Context" text area for links, certifications, side projects, open-source work, career preferences, and anything not in the resume.
+- Provide a "Generate / Re-generate Unified Profile" action.
+- Show a unified profile summary after generation.
+- Handle slow processing states clearly.
+- Warn users if leaving during active profile unification can interrupt work.
+
+Designer challenge
+The profile page has two very different information types:
+- Source material inventory.
+- Generated canonical profile.
+
+A strong redesign should separate these while making their relationship clear: files and context feed the unified profile, and the unified profile feeds JobLens.
+
+
+8. Job creation and tracking
+
+There are two job creation paths.
+
+Path A: AI-analyzed job
+- Endpoint: POST /api/jobs
+- User submits raw job description text and optional company website.
+- Backend creates a job immediately.
+- Job starts with status "analyzing".
+- Backend creates a JobLens session.
+- Background pipeline runs after the response.
+- User should be navigated to the job detail page.
+- UI should show progressive analysis as pipeline modules complete.
+
+Path B: manually tracked job
+- Endpoint: POST /api/jobs/track
+- User enters job title, company, URL, location, and optional status.
+- No AI pipeline runs.
+- Job appears in normal tracking workflows.
+
+Job status model
+The backend currently uses one status field for both internal pipeline states and user-managed application states.
+
+Internal pipeline statuses
+- queued
+- analyzing
+
+User-managed active statuses
+- tracked
+- applied
+- interview
+- offer
+- rejected
+
+User-managed inactive status
+- archived
+
+Critical UX requirement
+Do not mix internal pipeline states with user workflow states in the Kanban board. Users do not manage "queued" or "analyzing" as application statuses.
+
+
+9. Dashboard requirements
+
+Dashboard purpose
+The dashboard is the operational command center. It should answer:
+- What jobs are actively in my pipeline?
+- Which jobs are still being processed by the system?
+- What opportunities have I archived?
+- What statuses need attention?
+
+Required dashboard sections
+
+1. Processing Jobs
+- Shows jobs with status "queued" or "analyzing".
+- This section belongs above the Kanban board.
+- It is system-controlled and has no drag/drop.
+- It should show job title, company, current analysis state, and a link/open action to job detail.
+- It should feel compact and temporary.
+- It should make clear that the system is working.
+
+2. Active Kanban Board
+- Shows only active user workflow states:
+  - Tracked
+  - Applied
+  - Interview
+  - Offer
+  - Rejected
+- Supports drag/drop only between these columns.
+- Cards should show company, title, score if available, location or relevant job metadata, age/date, and quick actions.
+- Cards should include an Archive action in an overflow menu.
+- Archived, queued, and analyzing must not appear as board columns.
+- Board counts should only count active jobs.
+
+3. Archived Jobs
+- Belongs below the Kanban board.
+- Collapsed by default if there are archived jobs.
+- Shows title, company, last relevant date, match score if available, and actions to open/delete.
+- No archived column or archived empty state inside the board.
+
+Dashboard stats
+- Stats should be based on active board jobs, not total jobs.
+- Recommended stats:
+  - Active Jobs
+  - Applied
+  - Interview
+  - Offer
+  - Rejected
+
+Dashboard empty states
+- No active jobs: invite user to add a job.
+- Processing exists but board is empty: show processing section and explain analyzed jobs will move into active workflow.
+- Archived exists but active is empty: avoid making archived jobs look active.
+
+
+10. Jobs page requirements
+
+Jobs page purpose
+The Jobs page is a searchable database of jobs the user cares about. It is not the system pipeline monitor.
+
+Visible filters
+Only show user-facing statuses:
+- All
+- Tracked
+- Applied
+- Interview
+- Offer
+- Rejected
+- Archived
+
+Do not show these on the Jobs page filter bar:
+- Pipeline
+- Active
+- Queued
+- Analyzing
+
+Jobs page data visibility
+- The current frontend hides queued/analyzing jobs from the Jobs table.
+- Processing jobs are handled by the dashboard Processing Jobs section.
+
+Table/list requirements
+- Search by job title and company.
+- Show company, role, status, match score, location or job metadata, date added, and delete action.
+- Rows should open job detail.
+- Archived jobs can appear through the Archived filter.
+- Match score may be absent; design a neutral no-score state.
+
+Designer challenge
+The Jobs page should be optimized for scanning and retrieval, not workflow movement. The Kanban board is for workflow movement.
+
+
+11. Job detail requirements
+
+Job detail purpose
+The job detail page is the analysis workspace for one opportunity. It should combine:
+- Job identity.
+- User status.
+- Match score.
+- JobLens module navigation.
+- Notes.
+- AI-generated analysis sections.
+- Cover letter entry point.
+
+Header requirements
+- Back to Jobs.
+- Job title.
+- Company name.
+- Match score if available.
+- Status control.
+- Delete action.
+
+Status control rules
+- If job.status is "queued" or "analyzing", show a read-only pipeline badge.
+- Do not offer queued/analyzing in an editable dropdown.
+- If job.status is user-managed, show editable statuses:
+  - Tracked
+  - Applied
+  - Interview
+  - Offer
+  - Rejected
+  - Archived
+
+Notes requirements
+- User can edit and save notes.
+- Saving state should be visible.
+- Notes should be easy to scan while reviewing analysis.
+
+JobLens module navigation
+Current modules:
+- Profile
+- Job Description
+- Company Intel
+- Match Analysis
+- Reachout
+
+Each module has one of these display states:
+- idle
+- running
+- done
+- error
+
+Pipeline UX requirements
+- Running state should be visible and reassuring.
+- Done modules should become available immediately.
+- Failed modules should not hide successful modules.
+- The user should be able to inspect completed sections while other work continues.
+- WebSocket events should progressively update module state.
+- Polling fallback should be visually indistinguishable from WebSocket updates.
+
+
+12. JobLens module detail requirements
+
+Profile snapshot module
+Purpose:
+- Shows the profile the system used for this job.
+- This may differ from the current profile if the job was analyzed earlier.
+
+Should display:
+- Name, title, location, contact links.
+- Summary.
+- Skills.
+- Recent experience.
+- Education.
+- Additional dynamic sections.
+
+Job Description module
+Purpose:
+- Turns raw JD text into structured requirements.
+
+Should display:
+- Job title, company, location.
+- Work mode.
+- Employment type.
+- Seniority level.
+- Experience range.
+- Role family and primary track.
+- Company context from the JD.
+- Primary skills.
+- Secondary skills.
+- Responsibilities.
+- Qualifications.
+- Constraints.
+- Keywords.
+- Warnings and extraction notes.
+
+Company Intel module
+Purpose:
+- Gives context about the company and engineering environment.
+
+Should display:
+- Company identity.
+- Short description and mission if available.
+- Industry, stage/scale, founded, HQ/distribution.
+- Product signals.
+- Engineering presence.
+- Technical signals grouped by category.
+- Culture and hiring signals.
+- Source pages and warnings.
+
+Match Analysis module
+Purpose:
+- Explains how well the user's profile fits the job and what to improve.
+
+Should display:
+- Total score.
+- Match band.
+- Headline.
+- Strongest matches.
+- Biggest gaps.
+- Hard constraint summary if present.
+- Score components.
+- Constraints and risks.
+- Skill matches with evidence and gap.
+- Responsibility matches.
+- Domain matches.
+- Resume actions:
+  - update actions
+  - replace actions
+  - delete actions
+  - selected actions
+
+Design note:
+The match page must be evidence-driven. A score without evidence is not trustworthy. Let users drill from score to reason to source/evidence.
+
+Reachout module
+Purpose:
+- Helps the user find people to contact for referrals, recruiter outreach, or insight.
+
+Should display:
+- Search plan.
+- Target personas.
+- Queries.
+- Candidate contacts.
+- Candidate title, company, profile URL, source, likely persona, confidence, confidence reasons.
+- Rejected/filtered results if useful for transparency.
+- Warnings.
+
+
+13. Cover letter system
+
+Purpose
+The cover letter system generates, edits, saves, copies, downloads, and tracks generated letters.
+
+Modes
+- Auto
+- Storyline
+- Disruptive
+- Regular
+- Custom
+
+Auto mode
+- Runs JD tone analysis first.
+- Returns recommended mode, confidence, tone signals, culture indicators, formality level, industry, and reasoning.
+- The UI should explain the recommendation without overloading the user.
+
+Quick cover letter flow
+- User enters or arrives with raw JD text and company name.
+- Selects mode or auto mode.
+- Can provide custom prompt for custom mode.
+- Generates a cover letter.
+- Can edit the generated letter.
+- Can save edits.
+- Can copy to clipboard.
+- Can download as PDF.
+- Can view history.
+
+Job-specific cover letter flow
+- Starts from a specific job.
+- Uses job posting/company data.
+- Provides the same generation/edit/export actions.
+
+Cover letter data model
+- CoverLetter has id, optional job_id, mode, content object, created_at, updated_at.
+- content usually contains full_letter and related metadata.
+- Generated output can be absent while loading or before generation.
+
+Design requirements
+- Writing canvas should feel distinct from analysis panels.
+- Provide side controls for mode, tone signals, custom prompt, and history.
+- Provide a readable document preview/edit surface.
+- Make copy/download/save actions explicit.
+- Avoid hiding generated text inside small cards.
+
+
+14. Global state and persistence
+
+Client store
+- token
+- user
+- theme
+- jobsFilter
+- hydration state
+
+Persistence
+- token, theme, and jobsFilter persist in client storage.
+- Designs should handle stale persisted filters gracefully.
+- Authenticated screens should avoid flashing protected content before hydration.
+
+Theme
+- Existing app supports light/dark theme.
+- Redesign should preserve theme support or define a replacement strategy.
+
+
+15. Realtime and asynchronous states
+
+The product has many asynchronous states. A redesign must define clear patterns for:
+
+- Initial loading.
+- Auth redirect.
+- File upload progress.
+- File parsing.
+- Profile unification.
+- Job creation.
+- JobLens background analysis.
+- Per-module running/done/error state.
+- Save notes.
+- Save cover letter edits.
+- Delete confirmation.
+- Archive confirmation.
+- Empty data.
+- No score.
+- Failed API request.
+- Unauthorized state.
+
+JobLens WebSocket events
+Expected event types include:
+- joblens_step_started
+- joblens_step_complete
+- joblens_step_failed
+- joblens_pipeline_complete
+
+Important behavior
+- The initial POST /api/jobs response is immediate.
+- The analysis may continue after navigation.
+- Module completion order may not be perfectly linear because some modules run concurrently.
+- current_step is coarse; nullable fields and WebSocket events are more accurate for frontend display.
+
+
+16. Information hierarchy principles
+
+For redesign, prioritize information like this:
+
+First-level decisions
+- Which job is this?
+- What is the score?
+- What is the status?
+- What action should the user take next?
+
+Second-level evidence
+- What skills match?
+- What gaps matter?
+- What constraints are risky?
+- What resume changes are recommended?
+
+Third-level transparency
+- Source phrases.
+- Warnings.
+- Extraction notes.
+- Raw parsed data.
+- Full lists of evidence and rejected results.
+
+Design implication
+Do not flatten everything into one long report. Use progressive disclosure. The product should let users scan, then inspect.
+
+
+17. Data display requirements
+
+Scores
+- Match score is usually 0-100.
+- Scores may be absent.
+- Score bands: strong, good, partial, weak.
+- Scores should not be the only signal; show headline and reasons.
+
+Dates
+- API returns ISO-like strings.
+- UI should show compact dates in lists and more detailed dates in detail views.
+
+Optional data
+- Many fields may be null or omitted.
+- Designs must handle missing company, title, score, website, location, skills, warnings, and contacts.
+
+Unknown/dynamic data
+- dynamic_sections and some parsed data are arbitrary records.
+- The UI should provide a generic data viewer for inspection but should not make arbitrary raw JSON the primary user experience.
+
+Warnings
+- AI modules can return warnings.
+- Warnings are user-relevant and should be visible near the related module, not hidden globally.
+
+Evidence
+- Evidence items include source/profile fields, text, type, strength, and explanation.
+- Evidence should be available for drilldown in match analysis.
+
+
+18. Actions and confirmations
+
+High-risk actions requiring confirmation
+- Delete job.
+- Delete profile file.
+- Delete cover letter.
+- Delete account.
+
+Moderate-risk actions
+- Archive job.
+- Regenerate unified profile.
+- Save edits that overwrite previous notes or cover letter content.
+
+Frequent actions
+- Add job.
+- Track job manually.
+- Open job detail.
+- Change job status.
+- Archive job.
+- Search/filter jobs.
+- Upload profile file.
+- Generate unified profile.
+- Generate cover letter.
+- Copy cover letter.
+- Download cover letter.
+
+Design requirements
+- Destructive actions should be visibly distinct.
+- Confirmation modals should state the result plainly.
+- Optimistic updates may be used for status changes, but failure rollback must be possible.
+
+
+19. Recommended component inventory
+
+Global
+- App shell
+- Header / navigation
+- User profile menu
+- Theme toggle
+- Loading spinner/skeleton
+- Empty state
+- Error callout
+- Confirmation dialog
+- Toast or inline success state
+
+Jobs
+- Add job modal
+- Manual tracking form
+- JD analysis form
+- Kanban board
+- Kanban column
+- Job card
+- Processing jobs list
+- Archived jobs section
+- Jobs table/list
+- Status pill
+- Match score badge
+- Job metadata row
+
+Job detail
+- Job header
+- Pipeline status badge
+- User status dropdown
+- Notes editor
+- JobLens module rail/tabs
+- Module status indicator
+- Score summary
+- Score component chart/list
+- Skill match matrix
+- Constraint risk list
+- Resume action queue
+- Evidence drawer
+- Source/warnings drawer
+
+Profile
+- File upload zone
+- File inventory table/list
+- File type selector
+- File context editor
+- Parsed data viewer
+- Unified profile summary
+- Experience timeline
+- Skill chips/list
+- Education list
+
+Cover letters
+- Mode selector
+- Tone analysis panel
+- Prompt editor
+- Generation action
+- Letter preview
+- Letter editor
+- History list
+- Copy/save/download actions
+
+
+20. Screen-by-screen redesign requirements
+
+Home / Login
+- Clear product identity and OAuth entry point.
+- Explain the value without becoming a long marketing site.
+- Redirect authenticated users to dashboard.
+
+Dashboard
+- Show processing jobs first if any.
+- Show active status stats.
+- Show active Kanban board.
+- Show archived jobs separately below board.
+- Provide Add Job action.
+- Keep board drag/drop obvious but visually restrained.
+
+Jobs
+- Show only user-facing filters:
+  - All
+  - Tracked
+  - Applied
+  - Interview
+  - Offer
+  - Rejected
+  - Archived
+- Do not show Pipeline, Active, Queued, or Analyzing.
+- Provide search.
+- Provide dense list/table with status and score.
+- Opening a row navigates to job detail.
+
+Job Detail
+- Header with identity, score, status, delete.
+- Pipeline statuses are read-only badges.
+- User statuses are editable.
+- Left rail or tab system for JobLens modules.
+- Notes should remain accessible.
+- Each module should independently handle idle/running/done/error.
+
+Profile
+- Upload and manage files.
+- Show file parse data and context.
+- Generate unified profile.
+- Show unified profile in readable form.
+- Make the relationship between uploaded files and generated profile explicit.
+
+Cover Letters
+- Separate generation controls from document reading/editing.
+- Show tone recommendation in auto mode.
+- Preserve history.
+- Make copy/download/save obvious.
+
+Settings
+- Account controls.
+- Theme controls.
+- Model/provider preferences if exposed by backend.
+- Destructive account deletion should be isolated and confirmed.
+
+
+21. Status language
+
+Use user-language for application states:
+- Tracked: saved opportunity, not necessarily applied.
+- Applied: application submitted.
+- Interview: interview process active.
+- Offer: offer received.
+- Rejected: no longer progressing.
+- Archived: removed from active workflow but retained.
+
+Use system-language only in system-controlled sections:
+- Queued: waiting to start analysis.
+- Analyzing: AI pipeline is running.
+
+Do not let users drag cards into queued or analyzing.
+Do not make queued/analyzing look like application progress.
+
+
+22. Accessibility requirements
+
+- All interactive controls need keyboard focus states.
+- Drag/drop Kanban should have non-drag fallback if possible.
+- Status and score should not rely only on color.
+- Text contrast must work in light and dark themes.
+- Tables/lists should preserve readable hierarchy at small widths.
+- Buttons should have accessible labels.
+- Icon-only controls need tooltips and aria-labels.
+- Loading and saving states should be communicated with text, not only spinners.
+
+
+23. Responsive requirements
+
+Desktop
+- Primary target for dense workflows.
+- Dashboard can use horizontal Kanban columns.
+- Job detail can use side rail plus content panel.
+
+Tablet
+- Kanban may remain horizontal scroll.
+- Detail page can stack rail/tabs above content.
+
+Mobile
+- Avoid forcing full Kanban interaction as the only management surface.
+- Use status lists or segmented views for board columns if needed.
+- Job detail should prioritize header, status, score, and current module.
+- Tables should become cards or horizontally scroll with clear affordance.
+
+
+24. Visual design guidance
+
+The current product is work-focused and data-heavy. A redesign should:
+
+- Feel like a professional command center.
+- Use restrained color for meaning, not decoration.
+- Keep information dense but not cramped.
+- Make AI output inspectable and credible.
+- Use hierarchy, grouping, and typography to tame complex data.
+- Avoid oversized marketing-style hero sections inside the authenticated product.
+- Avoid making every section a decorative card; reserve cards for discrete objects and focused panels.
+- Use consistent status colors and score semantics.
+- Support both light and dark modes.
+
+Recommended visual tone
+- Calm
+- Technical
+- Trustworthy
+- Efficient
+- Clear
+- Slightly premium, but not flashy
+
+
+25. Key backend endpoints for design planning
+
+Auth
+- GET /api/auth/google
+- GET /api/auth/me
+- PATCH /api/auth/profile
+- DELETE /api/auth/profile
+
+Profile
+- GET /api/profile
+- POST /api/profile/upload
+- GET /api/profile/files
+- GET /api/profile/files/{file_id}
+- PATCH /api/profile/files/{file_id}
+- DELETE /api/profile/files/{file_id}
+- GET /api/profile/file/{file_id}/download
+- POST /api/profile/unified
+- PATCH /api/profile/additional-context
+
+Jobs
+- POST /api/jobs
+- POST /api/jobs/track
+- GET /api/jobs
+- GET /api/jobs/{job_id}
+- PATCH /api/jobs/{job_id}
+- DELETE /api/jobs/{job_id}
+- GET /api/jobs/{job_id}/analysis
+- POST /api/jobs/{job_id}/parse-resume
+
+Cover letters
+- POST /api/cover-letters/analyze-jd
+- POST /api/cover-letters
+- GET /api/cover-letters
+- GET /api/cover-letters/{letter_id}
+- PATCH /api/cover-letters/{letter_id}
+- DELETE /api/cover-letters/{letter_id}
+
+
+26. Non-negotiable product requirements
+
+- Authenticated users must be protected behind OAuth/JWT.
+- Profile document upload and unified profile generation must remain first-class.
+- AI-analyzed jobs and manually tracked jobs must both be supported.
+- Processing jobs must be separate from active application workflow.
+- Kanban must only show Tracked, Applied, Interview, Offer, Rejected.
+- Archived jobs must not be a Kanban column.
+- Jobs page must not expose Pipeline, Active, Queued, or Analyzing filters.
+- Job detail must render queued/analyzing as read-only pipeline state.
+- Match analysis must show reasons and evidence, not just a score.
+- Cover letter generation must support multiple modes and edit/export workflows.
+- Missing optional AI data must not break layouts.
+- Long-running AI states must be visible and recoverable.
+
+
+27. Design opportunities
+
+Opportunity 1: Make the pipeline understandable
+The product is powered by multiple AI modules. The redesign can make this feel like a transparent workflow rather than a black box.
+
+Opportunity 2: Improve actionability
+The analysis is rich. The UI should turn it into clear next steps: apply, revise resume, reach out, archive, generate letter.
+
+Opportunity 3: Better comparison and prioritization
+Users may have many jobs. Score, status, dates, and gaps can help prioritize which opportunities deserve time.
+
+Opportunity 4: Unify profile and job intelligence
+The profile should not feel like a settings page. It is the input that powers every downstream output.
+
+Opportunity 5: Separate work modes
+Dashboard = manage.
+Jobs = search/retrieve.
+Job Detail = analyze/act.
+Profile = prepare source data.
+Cover Letters = write/export.
+
+
+28. Success criteria for a redesign
+
+A successful redesign should let a user:
+
+- Understand what Wand does within one minute.
+- Upload profile sources and generate a unified profile without confusion.
+- Add a job for AI analysis and see that the system is processing.
+- Track active applications without seeing system pipeline statuses mixed into workflow.
+- Inspect a job's score and understand why that score exists.
+- Identify the top resume changes for a role.
+- Find outreach candidates for a company.
+- Generate, edit, copy, and download a cover letter.
+- Search and manage existing jobs quickly.
+- Archive jobs without losing them.
+- Trust the AI output because evidence, warnings, and missing states are explicit.
+
+
+29. Glossary
+
+JobLens
+The AI pipeline that analyzes a job against the user's profile.
+
+Unified Profile
+A canonical career profile created by merging uploaded career documents and additional context.
+
+Processing Job
+A job whose backend AI pipeline is queued or analyzing.
+
+Active Board Job
+A job in one of the active user-managed workflow statuses: tracked, applied, interview, offer, rejected.
+
+Archived Job
+A job removed from the active board but retained for history.
+
+Match Score
+A 0-100 score summarizing profile-to-job fit.
+
+Match Band
+A qualitative label for the match score: strong, good, partial, weak.
+
+Resume Action
+An AI-suggested update, replacement, or deletion in the user's resume/profile material.
+
+Reachout Candidate
+A person the system suggests contacting for recruiting, referral, hiring, or team insight.
+
+
+30. Open questions for the designer/product owner
+
+- Should processing jobs appear only on Dashboard, or should Jobs have a hidden/system filter for admins?
+- Should archived jobs be searchable from global search even if not shown by default?
+- Should match score be more prominent than application status, or should status remain primary?
+- Should the product introduce a "next best action" layer across Dashboard and Job Detail?
+- Should cover letters be a global writing workspace, job-attached artifacts, or both equally?
+- Should profile completeness be represented as a score/checklist?
+- Should users be able to compare multiple jobs side by side?
+- Should the Kanban have mobile-specific behavior separate from desktop drag/drop?
+

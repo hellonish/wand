@@ -2,13 +2,29 @@
 
 import { useEffect, useState } from 'react';
 import "./globals.css";
-import { Inter } from 'next/font/google';
+import { Geist, Geist_Mono, Lora } from 'next/font/google';
 import { useStore } from '@/utils/store';
 import { useGlobalWebSocket } from '@/hooks/useGlobalWebSocket';
+import ProfileDocumentReminder from '@/components/ProfileDocumentReminder';
+import FloatingUploadTray from '@/components/FloatingUploadTray';
 
-const inter = Inter({
+const geist = Geist({
   subsets: ['latin'],
-  variable: '--font-inter',
+  variable: '--font-geist',
+  display: 'swap',
+});
+
+const geistMono = Geist_Mono({
+  subsets: ['latin'],
+  variable: '--font-geist-mono',
+  display: 'swap',
+});
+
+const lora = Lora({
+  subsets: ['latin'],
+  weight: ['400', '500', '600'],
+  style: ['normal', 'italic'],
+  variable: '--font-lora',
   display: 'swap',
 });
 
@@ -43,10 +59,17 @@ export default function RootLayout({
   }, [theme, mounted]);
 
   return (
-    <html lang="en" className={`${inter.variable} ${mounted && theme === 'dark' ? 'dark' : ''}`}>
+    <html
+      lang="en"
+      data-variation="console"
+      data-density="comfy"
+      data-type="geist"
+      data-theme={mounted && theme === 'dark' ? 'dark' : 'light'}
+      className={`${geist.variable} ${geistMono.variable} ${lora.variable} ${mounted && theme === 'dark' ? 'dark' : ''}`}
+    >
       <head>
-        <title>Wand - AI Resume Analyzer</title>
-        <meta name="description" content="Analyze your resume against job postings with AI-powered insights" />
+        <title>Wand - JobLens Console</title>
+        <meta name="description" content="Track jobs, analyze fit, and generate application material with Wand." />
         <link rel="icon" href="/favicon.ico" sizes="any" />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
         <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
@@ -55,6 +78,8 @@ export default function RootLayout({
       </head>
       <body className="antialiased">
         {children}
+        <ProfileDocumentReminder />
+        <FloatingUploadTray />
       </body>
     </html>
   );

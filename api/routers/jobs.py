@@ -1,20 +1,24 @@
 """Jobs Router - CRUD, tracking, and analysis pipeline."""
 
 import asyncio
+import hashlib
 import json
 import logging
 from typing import Any, List, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile, BackgroundTasks
+from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from engine.joblens.company_intel import CompanyIntelInput, CompanyIntelService
 from engine.joblens.job_description import JobDescriptionBreakdownResult, break_down_job_description
 from engine.joblens.job_match import JobMatchResult, match_profile_to_job
+from engine.joblens.job_match.models import JobMatchScore, ResumeActions
 from engine.joblens.reachout import ReachoutInput, ReachoutService
 from engine.profile.models import UnifiedProfile
 from engine.profile.unification import create_unified_profile, merge_profile_sources
+import engine.inference as inference
 
 from ..database import SessionLocal, get_db
 from ..auth import get_current_user
@@ -136,17 +140,101 @@ def _gather_company_intel(job_description: JobDescriptionBreakdownResult, compan
     )
 
 
-def _calculate_match(profile: Optional[UnifiedProfile], job_description: JobDescriptionBreakdownResult):
-    """Match section: compare unified profile against the processed job."""
-
+def _score_match(profile: Optional[UnifiedProfile], job_description: JobDescriptionBreakdownResult) -> JobMatchScore:
+    """Phase A — score + evidence, no resume actions."""
     if not profile:
         raise ValueError("No unified profile available.")
+    from engine.joblens.job_match.models import JobMatchRequest
+    llm = get_llm("job_match")
+    request = JobMatchRequest(profile=profile, job_description=job_description)
+    response = inference.score_job_match(llm, request)
+    from engine.utils import dedupe_warning_strings
+    score = response.result
+    score = score.model_copy(update={"warnings": dedupe_warning_strings([*score.warnings, *response.warnings])})
+    return score
 
-    return match_profile_to_job(
+
+def _extract_resume_text(resume_file: ProfileFile) -> Optional[str]:
+    """Extract plain text from a ProfileFile tagged as resume. Returns None on failure."""
+    try:
+        import mimetypes
+        from engine.profile.ingestion import ingest_document as _ingest_doc
+        from engine.profile.models import ProfileDocumentInput
+        with open(resume_file.file_path, "rb") as fh:
+            file_bytes = fh.read()
+        doc_input = ProfileDocumentInput(
+            filename=resume_file.filename,
+            file_bytes=file_bytes,
+            content_type=mimetypes.guess_type(resume_file.filename)[0] or "application/octet-stream",
+        )
+        ingested = _ingest_doc(doc_input)
+        return "\n".join(block.text for block in ingested.text_blocks) or None
+    except Exception:
+        logger.warning("Could not extract text from resume file %s", resume_file.id)
+        return None
+
+
+def _get_all_resume_candidates(user_id: str, db: Session):
+    """Return list of ResumeCandidateInput for every file tagged 'resume'. Empty list if none."""
+    from engine.joblens.job_match.models import ResumeCandidateInput
+    resume_files = (
+        db.query(ProfileFile)
+        .filter(ProfileFile.user_id == user_id, ProfileFile.file_type == "resume")
+        .order_by(ProfileFile.created_at.desc())
+        .all()
+    )
+    candidates = []
+    for f in resume_files:
+        text = _extract_resume_text(f)
+        if text:
+            candidates.append(ResumeCandidateInput(filename=f.filename, text=text))
+    return candidates
+
+
+def _has_resume_file(user_id: str, db: Session) -> bool:
+    """Return True if the user has at least one file tagged as 'resume'."""
+    return (
+        db.query(ProfileFile)
+        .filter(ProfileFile.user_id == user_id, ProfileFile.file_type == "resume")
+        .first()
+    ) is not None
+
+
+def _generate_actions(
+    profile: Optional[UnifiedProfile],
+    job_description: JobDescriptionBreakdownResult,
+    score: JobMatchScore,
+    resume_candidates=None,
+) -> ResumeActions:
+    """Phase B — resume actions grounded in Phase A score."""
+    if not profile:
+        raise ValueError("No unified profile available.")
+    from engine.joblens.job_match.models import JobMatchRequest
+    llm = get_llm("job_match")
+    request = JobMatchRequest(
         profile=profile,
         job_description=job_description,
-        llm=get_llm("job_match"),
+        resume_candidates=resume_candidates or [],
     )
+    response = inference.generate_resume_actions(llm, request, score)
+    from engine.utils import dedupe_warning_strings
+    actions = response.result
+    merged_warnings = dedupe_warning_strings([*actions.warnings, *response.warnings])
+
+    # Attach the actual text of whichever resume the LLM selected so the UI can
+    # render the real document instead of the synthesised unified profile.
+    resume_text: Optional[str] = None
+    candidates = resume_candidates or []
+    if actions.selected_resume_filename and candidates:
+        for c in candidates:
+            if c.filename == actions.selected_resume_filename:
+                resume_text = c.text
+                break
+    if resume_text is None and len(candidates) == 1:
+        resume_text = candidates[0].text
+
+    actions = actions.model_copy(update={"warnings": merged_warnings, "selected_resume_text": resume_text})
+    return actions
 
 
 def _discover_reachout(
@@ -205,8 +293,7 @@ def _job_posting_summary(job_description: JobDescriptionBreakdownResult) -> dict
 
 
 def _analysis_summary(match: JobMatchResult) -> dict:
-    """Build the durable Job.analysis_result from match output."""
-
+    """Build the durable Job.analysis_result from a full JobMatchResult."""
     return {
         "final_score": match.summary.total_score,
         "match_band": match.summary.match_band.value,
@@ -214,6 +301,35 @@ def _analysis_summary(match: JobMatchResult) -> dict:
         "strongest_matches": match.summary.strongest_matches,
         "biggest_gaps": match.summary.biggest_gaps,
     }
+
+
+def _analysis_summary_from_score(score: "JobMatchScore") -> dict:
+    """Build the durable Job.analysis_result from a Phase A JobMatchScore."""
+    return {
+        "final_score": score.summary.total_score,
+        "match_band": score.summary.match_band.value,
+        "headline": score.summary.headline,
+        "strongest_matches": score.summary.strongest_matches,
+        "biggest_gaps": score.summary.biggest_gaps,
+    }
+
+
+def _slim_company_intel(result) -> dict:
+    """Strip scraped page content before storage/transmission — frontend only uses source_pages.length."""
+    data = result.model_dump(mode="json")
+    for page in data.get("source_pages", []):
+        page.pop("text", None)
+        page.pop("headings", None)
+        page.pop("links", None)
+    return data
+
+
+def _slim_reachout(result) -> dict:
+    """Strip diagnostic-only arrays before storage/transmission."""
+    data = result.model_dump(mode="json")
+    data.pop("pre_gated_results", None)
+    data.pop("rejected_results", None)
+    return data
 
 
 def _emit(user_id: str, session_id: str, job_id: Optional[str], step: str, event: str, data: Optional[dict] = None) -> None:
@@ -277,13 +393,30 @@ async def run_job_analysis_background(
         async def run_job_description() -> None:
             nonlocal job_description
             try:
-                job_description = await asyncio.to_thread(
-                    lambda: break_down_job_description(
+                jd_hash = hashlib.md5(jd_text.strip().encode()).hexdigest()
+
+                def _load_or_call_llm() -> JobDescriptionBreakdownResult:
+                    with SessionLocal() as db:
+                        cached = (
+                            db.query(JobLensSession)
+                            .filter(
+                                JobLensSession.user_id == user_id,
+                                JobLensSession.jd_text_hash == jd_hash,
+                                JobLensSession.job_description.isnot(None),
+                            )
+                            .order_by(JobLensSession.created_at.desc())
+                            .first()
+                        )
+                        if cached and cached.job_description:
+                            logger.info("JD breakdown cache hit for hash %s (session %s)", jd_hash, cached.id)
+                            return JobDescriptionBreakdownResult.model_validate(cached.job_description)
+                    return break_down_job_description(
                         job_text=jd_text,
                         llm=get_llm("job_description"),
                         source_id=job_id,
                     )
-                )
+
+                job_description = await asyncio.to_thread(_load_or_call_llm)
                 _emit(
                     user_id,
                     session_id,
@@ -308,6 +441,7 @@ async def run_job_analysis_background(
             if job_description:
                 session.job_description = job_description.model_dump(mode="json")
                 session.raw_jd_text = jd_text
+                session.jd_text_hash = hashlib.md5(jd_text.strip().encode()).hexdigest()
                 session.current_step = max(session.current_step, 2)
                 if job:
                     job.job_posting = _job_posting_summary(job_description)
@@ -341,20 +475,42 @@ async def run_job_analysis_background(
                 _emit(user_id, session_id, job_id, step, "joblens_step_failed", {"error": str(error)})
                 return None
 
-        # Three independent post-processing sections. One /api/jobs hit triggers this fan-out.
-        company_intel, match_analysis, reachout = await asyncio.gather(
-            run_parallel_section(
-                "company_intel",
-                lambda: _gather_company_intel(job_description, company_website),
-            ),
+        # Wave 2 — three steps run in parallel.
+        # match_analysis = Phase A only (score + evidence, no resume actions).
+        # resume_actions (Phase B) runs in Wave 3, after Phase A completes.
+
+        # company_intel and reachout use slim serializers to drop large unused fields.
+        async def run_company_intel():
+            _emit(user_id, session_id, job_id, "company_intel", "joblens_step_started")
+            try:
+                result = await asyncio.to_thread(lambda: _gather_company_intel(job_description, company_website))
+                _emit(user_id, session_id, job_id, "company_intel", "joblens_step_complete",
+                      {"data": _slim_company_intel(result)})
+                return result
+            except Exception as error:
+                _emit(user_id, session_id, job_id, "company_intel", "joblens_step_failed", {"error": str(error)})
+                return None
+
+        async def run_reachout():
+            _emit(user_id, session_id, job_id, "reachout", "joblens_step_started")
+            try:
+                result = await asyncio.to_thread(
+                    lambda: _discover_reachout(profile_snapshot or UnifiedProfile(), job_description, company_website)
+                )
+                _emit(user_id, session_id, job_id, "reachout", "joblens_step_complete",
+                      {"data": _slim_reachout(result)})
+                return result
+            except Exception as error:
+                _emit(user_id, session_id, job_id, "reachout", "joblens_step_failed", {"error": str(error)})
+                return None
+
+        company_intel, match_score, reachout = await asyncio.gather(
+            run_company_intel(),
             run_parallel_section(
                 "match_analysis",
-                lambda: _calculate_match(profile_snapshot, job_description),
+                lambda: _score_match(profile_snapshot, job_description),
             ),
-            run_parallel_section(
-                "reachout",
-                lambda: _discover_reachout(profile_snapshot or UnifiedProfile(), job_description, company_website),
-            ),
+            run_reachout(),
         )
 
         def save_second_wave(db: Session) -> None:
@@ -363,20 +519,55 @@ async def run_job_analysis_background(
             if not session:
                 return
             if company_intel:
-                session.company_intel = company_intel.model_dump(mode="json")
+                session.company_intel = _slim_company_intel(company_intel)
                 session.current_step = max(session.current_step, 3)
-            if match_analysis:
-                session.match_analysis = match_analysis.model_dump(mode="json")
+            if match_score:
+                session.match_analysis = match_score.model_dump(mode="json")
                 session.current_step = max(session.current_step, 4)
                 if job:
-                    job.analysis_result = _analysis_summary(match_analysis)
+                    job.analysis_result = _analysis_summary_from_score(match_score)
             if reachout:
-                session.reachout = reachout.model_dump(mode="json")
+                session.reachout = _slim_reachout(reachout)
                 session.current_step = max(session.current_step, 5)
+
+        _db_write(save_second_wave)
+
+        # Wave 3 — Phase B: resume actions (needs Phase A + a file tagged 'resume').
+        resume_actions = None
+        _NO_RESUME_MARKER: dict = {"_skipped": True, "_reason": "no_resume_file"}
+
+        db_tmp = SessionLocal()
+        try:
+            _wave3_candidates = _get_all_resume_candidates(user_id, db_tmp)
+        finally:
+            db_tmp.close()
+        _wave3_has_resume = bool(_wave3_candidates)
+
+        if not _wave3_has_resume:
+            _emit(user_id, session_id, job_id, "resume_actions", "joblens_step_complete",
+                  {"data": _NO_RESUME_MARKER})
+        elif match_score and profile_snapshot:
+            _cands = _wave3_candidates
+            resume_actions = await run_parallel_section(
+                "resume_actions",
+                lambda: _generate_actions(profile_snapshot, job_description, match_score, _cands),
+            )
+
+        def save_third_wave(db: Session) -> None:
+            session = db.query(JobLensSession).filter(JobLensSession.id == session_id).first()
+            job = db.query(Job).filter(Job.id == job_id).first()
+            if not session:
+                return
+            if resume_actions:
+                session.resume_actions = resume_actions.model_dump(mode="json")
+                session.current_step = max(session.current_step, 6)
+            elif not _wave3_has_resume:
+                session.resume_actions = _NO_RESUME_MARKER
+                session.current_step = max(session.current_step, 6)
             if job and job.status == JobStatus.ANALYZING:
                 job.status = JobStatus.TRACKED
 
-        _db_write(save_second_wave)
+        _db_write(save_third_wave)
         _emit(user_id, session_id, job_id, "pipeline", "joblens_pipeline_complete")
 
     except Exception as error:
@@ -390,9 +581,176 @@ async def run_job_analysis_background(
         _emit(user_id, session_id, job_id, "pipeline", "joblens_pipeline_failed", {"error": str(error)})
 
 
+async def retry_steps_background(
+    job_id: str,
+    session_id: str,
+    user_id: str,
+    steps: List[str],
+) -> None:
+    """Re-run only the specified failed steps using existing session data."""
+
+    # Load what we need from the session
+    db = SessionLocal()
+    try:
+        session_row = db.query(JobLensSession).filter(JobLensSession.id == session_id).first()
+        if not session_row:
+            return
+        profile_data = session_row.profile_snapshot
+        jd_data = session_row.job_description
+        match_data = session_row.match_analysis
+        company_website = session_row.company_website
+    finally:
+        db.close()
+
+    profile_snapshot: Optional[UnifiedProfile] = None
+    job_description: Optional[JobDescriptionBreakdownResult] = None
+    match_score = None
+
+    if profile_data:
+        try:
+            profile_snapshot = UnifiedProfile.model_validate(profile_data)
+        except Exception:
+            pass
+
+    if jd_data:
+        try:
+            job_description = JobDescriptionBreakdownResult.model_validate(jd_data)
+        except Exception:
+            pass
+
+    if match_data:
+        try:
+            from engine.joblens.job_match.models import JobMatchScore as _JobMatchScore
+            match_score = _JobMatchScore.model_validate(match_data)
+        except Exception:
+            pass
+
+    if not job_description:
+        # Cannot retry without a parsed job description
+        _emit(user_id, session_id, job_id, "pipeline", "joblens_pipeline_failed",
+              {"error": "No job description in session — run full analysis first."})
+        return
+
+    _STEP_SERIALIZERS = {
+        "company_intel": _slim_company_intel,
+        "reachout": _slim_reachout,
+    }
+
+    async def run_step(step: str, fn):
+        _emit(user_id, session_id, job_id, step, "joblens_step_started")
+        try:
+            result = await asyncio.to_thread(fn)
+            serialize = _STEP_SERIALIZERS.get(step, lambda r: r.model_dump(mode="json"))
+            _emit(user_id, session_id, job_id, step, "joblens_step_complete",
+                  {"data": serialize(result)})
+            return result
+        except Exception as error:
+            logger.exception("Retry step %s failed for job %s: %s", step, job_id, error)
+            _emit(user_id, session_id, job_id, step, "joblens_step_failed", {"error": str(error)})
+            return None
+
+    results: dict = {}
+
+    # Independent steps (can run in parallel)
+    independent = [s for s in steps if s not in ("resume_actions",)]
+    needs_resume_actions = "resume_actions" in steps
+
+    async def maybe_run(step: str):
+        if step == "company_intel":
+            results["company_intel"] = await run_step(
+                step, lambda: _gather_company_intel(job_description, company_website)
+            )
+        elif step == "reachout":
+            results["reachout"] = await run_step(
+                step, lambda: _discover_reachout(
+                    profile_snapshot or UnifiedProfile(), job_description, company_website
+                )
+            )
+        elif step == "match_analysis":
+            results["match_analysis"] = await run_step(
+                step, lambda: _score_match(profile_snapshot, job_description)
+            )
+
+    await asyncio.gather(*[maybe_run(s) for s in independent])
+
+    # resume_actions depends on match_analysis (use fresh result if we just ran it)
+    if needs_resume_actions:
+        score_for_actions = results.get("match_analysis") or match_score
+        _NO_RESUME_MARKER_RETRY: dict = {"_skipped": True, "_reason": "no_resume_file"}
+
+        retry_db = SessionLocal()
+        try:
+            _retry_candidates = _get_all_resume_candidates(user_id, retry_db)
+        finally:
+            retry_db.close()
+        _retry_has_resume = bool(_retry_candidates)
+
+        if not _retry_has_resume:
+            _emit(user_id, session_id, job_id, "resume_actions", "joblens_step_complete",
+                  {"data": _NO_RESUME_MARKER_RETRY})
+            results["_resume_actions_skipped"] = True
+        elif score_for_actions and profile_snapshot:
+            _rcands = _retry_candidates
+            results["resume_actions"] = await run_step(
+                "resume_actions",
+                lambda: _generate_actions(profile_snapshot, job_description, score_for_actions, _rcands)
+            )
+        else:
+            _emit(user_id, session_id, job_id, "resume_actions", "joblens_step_failed",
+                  {"error": "Cannot generate resume actions without a match score."})
+
+    def save_retry(db: Session) -> None:
+        row = db.query(JobLensSession).filter(JobLensSession.id == session_id).first()
+        job = db.query(Job).filter(Job.id == job_id).first()
+        if not row:
+            return
+        if results.get("company_intel"):
+            row.company_intel = _slim_company_intel(results["company_intel"])
+        if results.get("reachout"):
+            row.reachout = _slim_reachout(results["reachout"])
+        if results.get("match_analysis"):
+            row.match_analysis = results["match_analysis"].model_dump(mode="json")
+            if job:
+                job.analysis_result = _analysis_summary_from_score(results["match_analysis"])
+        if results.get("resume_actions"):
+            row.resume_actions = results["resume_actions"].model_dump(mode="json")
+        elif results.get("_resume_actions_skipped"):
+            row.resume_actions = {"_skipped": True, "_reason": "no_resume_file"}
+            row.current_step = max(row.current_step, 6)
+
+    _db_write(save_retry)
+    _emit(user_id, session_id, job_id, "pipeline", "joblens_pipeline_complete")
+
+
 # ============================================================================
 # Routes
 # ============================================================================
+
+def _check_profile_documents(user_id: str, db: Session) -> None:
+    """Raise 400 if the user has no parsed profile documents (new API or legacy)."""
+    doc_count = (
+        db.query(ProfileFile)
+        .filter(ProfileFile.user_id == user_id, ProfileFile.parsed_data.isnot(None))
+        .count()
+    )
+    if doc_count > 0:
+        return
+    # Legacy fallback: old-style per-column blobs
+    user_profile = db.query(UserProfile).filter(UserProfile.user_id == user_id).first()
+    if user_profile and any([
+        user_profile.resume_data,
+        user_profile.linkedin_data,
+        user_profile.portfolio_data,
+    ]):
+        return
+    raise HTTPException(
+        status_code=400,
+        detail={
+            "code": "NO_PROFILE_DOCUMENTS",
+            "message": "Upload at least one profile document (resume, LinkedIn export, or portfolio) before analyzing a job.",
+        },
+    )
+
 
 @router.post("", response_model=JobResponse)
 async def create_job(
@@ -402,6 +760,8 @@ async def create_job(
     db: Session = Depends(get_db)
 ):
     """Create a new job and kick off the analysis pipeline."""
+    _check_profile_documents(current_user.id, db)
+
     # Create placeholder job
     job = Job(
         user_id=current_user.id,
@@ -454,6 +814,14 @@ async def list_jobs(
 
     jobs = query.order_by(Job.updated_at.desc()).all()
 
+    session_ids = [j.joblens_session_id for j in jobs if j.joblens_session_id]
+    session_steps: dict[str, int] = {}
+    if session_ids:
+        rows = db.query(JobLensSession.id, JobLensSession.current_step).filter(
+            JobLensSession.id.in_(session_ids)
+        ).all()
+        session_steps = {row.id: row.current_step for row in rows}
+
     result = []
     for job in jobs:
         final_score = None
@@ -466,6 +834,7 @@ async def list_jobs(
             "final_score": final_score,
             "company_website": job.company_website,
             "joblens_session_id": job.joblens_session_id,
+            "current_step": session_steps.get(job.joblens_session_id) if job.joblens_session_id else None,
             "created_at": job.created_at,
         }
         result.append(JobListResponse(**job_dict))
@@ -570,6 +939,97 @@ async def delete_job(
     db.delete(job)
     db.commit()
     return {"message": "Job deleted"}
+
+
+@router.post("/{job_id}/analyze", response_model=JobResponse)
+async def analyze_job(
+    job_id: UUID,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """(Re-)run the JobLens analysis pipeline for an existing tracked job."""
+    job = db.query(Job).filter(
+        Job.id == str(job_id),
+        Job.user_id == current_user.id,
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    _check_profile_documents(current_user.id, db)
+
+    # Get or create a JobLens session
+    session = None
+    if job.joblens_session_id:
+        session = db.query(JobLensSession).filter(JobLensSession.id == job.joblens_session_id).first()
+
+    if not session:
+        raw_jd = (job.job_posting or {}).get("raw_jd", "") or ""
+        session = JobLensSession(
+            user_id=current_user.id,
+            job_id=job.id,
+            raw_jd_text=raw_jd,
+            company_website=job.company_website,
+        )
+        db.add(session)
+        db.flush()
+        job.joblens_session_id = session.id
+
+    job.status = JobStatus.ANALYZING
+    db.commit()
+    db.refresh(job)
+
+    jd_text = session.raw_jd_text or (job.job_posting or {}).get("raw_jd", "") or ""
+
+    background_tasks.add_task(
+        run_job_analysis_background,
+        job.id, session.id, current_user.id,
+        jd_text, job.company_website,
+    )
+
+    return job
+
+
+class RetryStepsRequest(BaseModel):
+    steps: List[str]
+
+
+@router.post("/{job_id}/retry-steps", response_model=JobLensSessionResponse)
+async def retry_steps(
+    job_id: UUID,
+    body: RetryStepsRequest,
+    background_tasks: BackgroundTasks,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Re-run only specific failed steps for an existing job analysis session."""
+    VALID_STEPS = {"company_intel", "match_analysis", "resume_actions", "reachout"}
+    requested = [s for s in body.steps if s in VALID_STEPS]
+    if not requested:
+        raise HTTPException(status_code=400, detail="No valid retry steps provided.")
+
+    job = db.query(Job).filter(
+        Job.id == str(job_id),
+        Job.user_id == current_user.id,
+    ).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if not job.joblens_session_id:
+        raise HTTPException(status_code=400, detail="No analysis session found. Run full analysis first.")
+
+    session = db.query(JobLensSession).filter(
+        JobLensSession.id == job.joblens_session_id,
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Analysis session not found.")
+
+    background_tasks.add_task(
+        retry_steps_background,
+        job.id, session.id, current_user.id, requested,
+    )
+
+    return session
 
 
 @router.post("/track", response_model=JobResponse)

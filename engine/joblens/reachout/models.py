@@ -212,6 +212,10 @@ class ReachoutResult(StrictReachoutModel):
     pre_gated_results: List[GatedSearchResult] = Field(default_factory=list)
     candidates: List[ReachoutCandidate] = Field(default_factory=list)
     rejected_results: List[RejectedReachoutResult] = Field(default_factory=list)
+    linkedin_search_urls: List[str] = Field(
+        default_factory=list,
+        description="Actionable LinkedIn People Search URLs generated from the search plan when no direct profiles were found.",
+    )
     warnings: List[str] = Field(default_factory=list)
 
 

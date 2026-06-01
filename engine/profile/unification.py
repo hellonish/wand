@@ -3,22 +3,8 @@
 from copy import deepcopy
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
-from engine.xai_client import XAIStructuredClient
+import engine.inference as inference
 from .models import UnifiedProfile
-
-
-UNIFICATION_SYSTEM_PROMPT = """Create one master profile from the supplied parsed profile sources.
-Merge duplicate jobs, schools, skills, and projects into one item each.
-Preserve every non-duplicate source fact, bullet, metric, tool, responsibility, achievement, outcome, and qualifier.
-Inputs may include multiple resumes, multiple profile versions, and multiple versions of the same project pointers.
-Treat each source/version as independent evidence.
-When the same real work experience or project appears in multiple sources with different wording, bullets, metrics, links, stack details, dates, titles, or scope, keep one record for the real entity and preserve every non-duplicate detail from every version.
-Do not let one resume/version overwrite another. Later, shorter, prettier, or more detailed versions can add details, but they must not erase unique details from other versions.
-If scalar fields differ across versions, use the most specific visible value in the scalar field and preserve alternate visible values in the item's descriptive fields or dynamic section data.
-Do not summarize, compress, paraphrase, rewrite, shorten, or reduce content to fewer words.
-Never use ellipses (`...` or `…`), "etc.", "and more", or similar placeholders to stand in for source content.
-Prefer precise source facts over generated prose.
-Return data matching the UnifiedProfile schema."""
 
 
 def merge_profile_sources(
@@ -34,35 +20,8 @@ def merge_profile_sources(
     if len(sources) == 1:
         return dict(next(iter(sources.values()))), None
 
-    client = llm or XAIStructuredClient()
-    response = client.complete(
-        response_model=UnifiedProfile,
-        messages=[
-            {"role": "system", "content": UNIFICATION_SYSTEM_PROMPT},
-            {"role": "user", "content": _user_message(sources, global_context, per_file_context)},
-        ],
-        temperature=0.0,
-        max_tokens=24000,
-    )
+    response = inference.unify_profiles(llm, sources, global_context, per_file_context)
     return response.model_dump(), None
-
-
-def _user_message(
-    sources: Mapping[str, Mapping[str, Any]],
-    global_context: Optional[str],
-    per_file_context: Optional[Mapping[str, str]],
-) -> str:
-    """Build source and user context for X.AI."""
-
-    parts = ["PROFILE SOURCES:"]
-    for name, data in sources.items():
-        parts.append(f"{name}:\n{data}")
-    if global_context:
-        parts.append(f"GLOBAL CONTEXT:\n{global_context}")
-    if per_file_context:
-        parts.append("PER-FILE CONTEXT:")
-        parts.extend(f"{name}: {context}" for name, context in per_file_context.items())
-    return "\n\n".join(parts)
 
 
 def create_unified_profile(sources: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:

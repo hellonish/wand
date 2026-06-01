@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:8000';
+const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000').replace(/\/$/, '');
 
 // Get auth token from localStorage
 function getToken(): string | null {
@@ -48,7 +48,20 @@ async function fetchWithAuth(url: string, options: FetchOptions = {}) {
         }
 
         const error = await response.json().catch(() => ({ detail: 'Request failed' }));
-        throw new Error(error.detail || 'Request failed');
+        const rawDetail = error.detail;
+        const detail = Array.isArray(rawDetail)
+            ? rawDetail.map((item: { msg?: string }) => item.msg).filter(Boolean).join(', ')
+            : typeof rawDetail === 'string'
+            ? rawDetail
+            : rawDetail != null && typeof rawDetail === 'object'
+            ? (rawDetail as { message?: string }).message ?? JSON.stringify(rawDetail)
+            : error.message;
+        const apiError = new Error(detail || 'Request failed') as Error & { code?: string };
+        // Attach structured code from the detail object when available (e.g. NO_PROFILE_DOCUMENTS)
+        if (rawDetail != null && typeof rawDetail === 'object' && (rawDetail as { code?: string }).code) {
+            apiError.code = (rawDetail as { code: string }).code;
+        }
+        throw apiError;
     }
 
     return response.json();
@@ -63,79 +76,40 @@ export interface User {
     name: string;
     profile_picture?: string;
     created_at?: string;
+    has_profile?: boolean;
+    onboarding_completed?: boolean;
 }
 
-// Qualification item (from AnalysisResult)
-export interface QualificationItem {
-    name: string;
-    matched: boolean;
-    evidence: string;
-}
-
-// Resume suggestion (from AnalysisResult)
-export interface ResumeSuggestion {
-    action: 'ADD' | 'UPDATE' | 'DELETE';
-    section: string;
-    target: string;
-    suggestion: string;
-    keyword: string;
-}
-
-// Chronological issue (from AnalysisResult)
-export interface ChronologicalIssue {
-    section: string;
-    issue_type: string;
-    description: string;
-}
-
-// Full analysis result from engine
-export interface AnalysisResult {
-    // Qualification matches
-    required_qualifications: QualificationItem[];
-    preferred_qualifications: QualificationItem[];
-    technical_skills: QualificationItem[];
-    soft_skills: QualificationItem[];
-
-    // Formatting issues
-    chronological_issues: ChronologicalIssue[];
-
-    // Scores (0-100)
-    resume_formatting_score: number;
-    keyword_match_score: number;
-    qualification_match_score: number;
-    skill_match_score: number;
-    final_score: number;
-
-    // Resume suggestions
-    resume_suggestions: ResumeSuggestion[];
-
-    // Job info
-    compensation_and_benefits: string[];
-    salary_range: string;
-
-    // Match counts
-    required_matched: number;
-    required_total: number;
-    preferred_matched: number;
-    preferred_total: number;
-    technical_matched: number;
-    technical_total: number;
-    soft_matched: number;
-    soft_total: number;
-}
+export type JobStatus = 'tracked' | 'queued' | 'analyzing' | 'applied' | 'interview' | 'offer' | 'rejected' | 'archived';
+export type ProfileFileType = 'resume' | 'linkedin' | 'portfolio' | 'other';
 
 // Job posting data structure
 export interface JobPosting {
     job_title: string;
     company_name: string;
-    location?: string;
-    job_link?: string;
-    required_qualifications?: string[];
-    preferred_qualifications?: string[];
-    technical_skills?: string[];
-    soft_skills?: string[];
-    salary_range?: string;
-    compensation_and_benefits?: string[];
+    location?: string | null;
+    job_link?: string | null;
+    raw_jd?: string;
+    work_mode?: 'remote' | 'hybrid' | 'onsite' | 'flexible' | 'unspecified';
+    employment_type?: 'full_time' | 'part_time' | 'contract' | 'internship' | 'temporary' | 'unspecified';
+    seniority_level?: 'intern' | 'entry' | 'junior' | 'mid' | 'senior' | 'staff' | 'lead' | 'manager' | 'unspecified';
+    years_of_experience_min?: number | null;
+    years_of_experience_max?: number | null;
+    role_family?: string | null;
+    primary_track?: string | null;
+    primary_skills?: string[];
+    secondary_skills?: string[];
+    responsibilities?: string[];
+    constraints?: string[];
+    keywords?: string[];
+}
+
+export interface JobAnalysisSummary {
+    final_score: number;
+    match_band: 'strong' | 'good' | 'partial' | 'weak';
+    headline: string;
+    strongest_matches: string[];
+    biggest_gaps: string[];
 }
 
 // Resume history entry
@@ -150,19 +124,23 @@ export interface ResumeHistoryEntry {
 export interface JobListItem {
     id: string;
     job_posting: JobPosting;
-    status: 'tracked' | 'queued' | 'analyzing' | 'applied' | 'interview' | 'offer' | 'rejected' | 'archived';
+    status: JobStatus;
     final_score?: number;
     company_website?: string;
     joblens_session_id?: string;
     created_at: string;
+    updated_at?: string;
+    pipeline_step?: string;
+    pipeline_progress?: number;
+    current_step?: number;
 }
 
 // Full job response (GET /api/jobs/{id})
 export interface Job {
     id: string;
     job_posting: JobPosting;
-    analysis_result?: AnalysisResult;
-    status: 'tracked' | 'queued' | 'analyzing' | 'applied' | 'interview' | 'offer' | 'rejected' | 'archived';
+    analysis_result?: JobAnalysisSummary | null;
+    status: JobStatus;
     user_notes?: string;
     resume_history?: ResumeHistoryEntry[];
     company_website?: string;
@@ -183,12 +161,12 @@ export interface JobTrackCreate {
     company_name: string;
     job_url?: string;
     location?: string;
-    status?: string;
+    status?: JobStatus;
 }
 
 // Job update request
 export interface JobUpdate {
-    status?: 'tracked' | 'queued' | 'analyzing' | 'applied' | 'interview' | 'offer' | 'rejected' | 'archived';
+    status?: JobStatus;
     user_notes?: string;
     job_link?: string | null;
 }
@@ -203,8 +181,8 @@ export interface UserProfile {
     resume_data?: Record<string, unknown>;
     linkedin_data?: Record<string, unknown>;
     portfolio_data?: Record<string, unknown>;
-    unified_profile?: Record<string, unknown>;
-    extracted_profile?: Record<string, unknown>;
+    unified_profile?: UnifiedProfile | Record<string, unknown>;
+    extracted_profile?: UnifiedProfile | Record<string, unknown>;
     additional_context?: string;
     updated_at: string;
 }
@@ -218,7 +196,7 @@ export interface ProfileUploadResponse {
 export interface ProfileFile {
     id: string;
     filename: string;
-    file_type: string;
+    file_type: ProfileFileType;
     file_size: number;
     parsed_data?: Record<string, unknown>;
     additional_context?: string;
@@ -236,7 +214,7 @@ export interface ProfileFileListResponse {
 
 export interface ProfileFileUploadResponse {
     id: string;
-    file_type: string;
+    file_type: ProfileFileType;
     filename: string;
     parsed_data?: Record<string, unknown>;
 }
@@ -296,14 +274,119 @@ export interface NewsResponse {
 // JobLens Types
 // ============================================================================
 
+export interface UnifiedProfile {
+    basics?: {
+        name?: string | null;
+        title?: string | null;
+        summary?: string | null;
+        contact_info?: {
+            email?: string | null;
+            phone?: string | null;
+            linkedin_url?: string | null;
+            portfolio_url?: string | null;
+            github_url?: string | null;
+        } | null;
+        location?: string | null;
+    } | null;
+    work_experience?: Array<{
+        job_title?: string | null;
+        company_name?: string | null;
+        start_date?: string | null;
+        end_date?: string | null;
+        is_current?: boolean;
+        location?: string | null;
+        description?: string[];
+        achievements?: string[];
+    }>;
+    skills?: string[];
+    education?: Array<{
+        institution?: string | null;
+        degree?: string | null;
+        major?: string | null;
+        graduation_year?: string | null;
+    }>;
+    dynamic_sections?: Record<string, unknown>;
+}
+
+export interface JobDescriptionBreakdownResult {
+    input?: { text: string; source_id?: string | null };
+    breakdown?: {
+        metadata?: Record<string, unknown>;
+        company_context?: Record<string, unknown>;
+        role_classification?: Record<string, unknown>;
+        primary_skills?: Record<string, unknown>[];
+        secondary_skills?: Record<string, unknown>[];
+        responsibilities?: Record<string, unknown>[];
+        qualifications?: Record<string, unknown>[];
+        constraints?: Record<string, unknown>[];
+        keywords?: string[];
+        extraction_notes?: string[];
+    };
+    warnings?: string[];
+}
+
+export interface CompanyIntelResult {
+    input?: Record<string, unknown>;
+    identity?: Record<string, unknown>;
+    product_signals?: Record<string, unknown>[];
+    engineering_presence?: Record<string, unknown>;
+    technical_signals?: Record<string, unknown>;
+    engineering_culture?: Record<string, unknown>;
+    hiring_signals?: Record<string, unknown>;
+    source_pages?: Record<string, unknown>[];
+    extraction_notes?: string[];
+    warnings?: string[];
+}
+
+export interface JobMatchResult {
+    job_title?: string | null;
+    company_name?: string | null;
+    role_family?: string | null;
+    summary?: {
+        total_score?: number;
+        match_band?: 'strong' | 'good' | 'partial' | 'weak';
+        headline?: string;
+        strongest_matches?: string[];
+        biggest_gaps?: string[];
+        hard_constraint_summary?: string | null;
+    };
+    score_components?: Record<string, unknown>[];
+    constraints?: Record<string, unknown>[];
+    skill_matches?: Record<string, unknown>[];
+    responsibility_matches?: Record<string, unknown>[];
+    selected_resume_filename?: string | null;
+    update_actions?: Record<string, unknown>[];
+    replace_actions?: Record<string, unknown>[];
+    delete_actions?: Record<string, unknown>[];
+    selected_actions?: Record<string, unknown>[];
+    warnings?: string[];
+}
+
+export interface ReachoutResult {
+    input?: Record<string, unknown>;
+    search_plan?: {
+        company_name?: string | null;
+        company_website?: string | null;
+        target_personas?: string[];
+        queries?: Record<string, unknown>[];
+        negative_filters?: string[];
+        search_strategy_notes?: string[];
+    };
+    raw_results?: Record<string, unknown>[];
+    candidates?: Record<string, unknown>[];
+    linkedin_search_urls?: string[];
+    warnings?: string[];
+}
+
 export interface JobLensSession {
     id: string;
     job_id?: string;
-    profile_snapshot?: Record<string, unknown>;
-    job_description?: Record<string, unknown>;
-    company_intel?: Record<string, unknown>;
-    match_analysis?: Record<string, unknown>;
-    reachout?: Record<string, unknown>;
+    profile_snapshot?: UnifiedProfile | null;
+    job_description?: JobDescriptionBreakdownResult | null;
+    company_intel?: CompanyIntelResult | null;
+    match_analysis?: JobMatchResult | null;     // Phase A: score + evidence
+    resume_actions?: Record<string, unknown> | null;  // Phase B: resume tailoring
+    reachout?: ReachoutResult | null;
     raw_jd_text?: string;
     company_website?: string;
     current_step: number;
@@ -319,7 +402,23 @@ export const api = {
     logout: () => fetchWithAuth('/api/auth/logout', { method: 'POST' }),
     updateUser: (data: { name?: string; profile_picture?: string }): Promise<User> =>
         fetchWithAuth('/api/auth/profile', { method: 'PATCH', body: JSON.stringify(data) }),
-    deleteAccount: (): Promise<void> => fetchWithAuth('/api/auth/profile', { method: 'DELETE' }),
+    uploadAvatar: (file: File): Promise<User> => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const token = getToken();
+        const headers: Record<string, string> = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        return fetch(`${API_BASE}/api/auth/avatar`, { method: 'POST', headers, body: formData })
+            .then(async (res) => {
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({ detail: 'Upload failed' }));
+                    throw new Error(err.detail || 'Upload failed');
+                }
+                return res.json();
+            });
+    },
+    deleteAvatar: (): Promise<User> => fetchWithAuth('/api/auth/avatar', { method: 'DELETE' }),
+    completeOnboarding: (): Promise<User> => fetchWithAuth('/api/auth/complete-onboarding', { method: 'POST' }),
 
     // Jobs
     getJobs: (status?: string): Promise<JobListItem[]> => {
@@ -364,7 +463,7 @@ export const api = {
     // Profile
     getProfile: (): Promise<UserProfile> => fetchWithAuth('/api/profile'),
 
-    uploadProfileFile: (file: File, type: 'resume' | 'linkedin' | 'portfolio'): Promise<ProfileUploadResponse> => {
+    uploadProfileFile: (file: File, type: ProfileFileType): Promise<ProfileUploadResponse> => {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('type', type);
@@ -406,7 +505,7 @@ export const api = {
     },
 
     uploadProfileFileMulti: async (
-        file: File, type: string, additionalContext?: string
+        file: File, type: ProfileFileType, additionalContext?: string
     ): Promise<ProfileFileUploadResponse> => {
         const formData = new FormData();
         formData.append('file', file);
@@ -444,7 +543,7 @@ export const api = {
     deleteProfileFileById: (fileId: string): Promise<void> =>
         fetchWithAuth(`/api/profile/files/${fileId}`, { method: 'DELETE' }),
 
-    updateProfileFile: (fileId: string, data: { file_type?: string; additional_context?: string }): Promise<ProfileFile> =>
+    updateProfileFile: (fileId: string, data: { file_type?: ProfileFileType; additional_context?: string }): Promise<ProfileFile> =>
         fetchWithAuth(`/api/profile/files/${fileId}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
     downloadProfileFile: async (fileId: string): Promise<Blob> => {
@@ -458,6 +557,17 @@ export const api = {
 
     // News
     getNews: (companyName: string): Promise<NewsResponse> => fetchWithAuth(`/api/news/${encodeURIComponent(companyName)}`),
+
+    // Run JobLens pipeline for a job
+    runJobLens: (jobId: string): Promise<Job> =>
+        fetchWithAuth(`/api/jobs/${jobId}/analyze`, { method: 'POST' }),
+
+    // Retry specific failed steps (does not restart the full pipeline)
+    retrySteps: (jobId: string, steps: string[]): Promise<JobLensSession> =>
+        fetchWithAuth(`/api/jobs/${jobId}/retry-steps`, {
+            method: 'POST',
+            body: JSON.stringify({ steps }),
+        }),
 
     // Convenience
     getJobWithSession: async (jobId: string): Promise<{ job: Job | null; session: JobLensSession | null }> => {
