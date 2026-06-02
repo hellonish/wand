@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { User, api, setToken, clearToken, type ProfileFileType } from './api';
+import { User, api, setToken, clearToken, type ProfileFileType, type BillingStatus } from './api';
 import { uploadFileXHR } from './uploadUtils';
 
 // ─── Upload queue ──────────────────────────────────────────────────────────────
@@ -53,6 +53,10 @@ interface AppState {
     uploadCompletedAt: number | null; // timestamp of last completed batch; profile page watches this
     enqueueUploads: (items: UploadInput[]) => void;
     clearCompletedUploads: () => void;
+
+    // Billing
+    billing: BillingStatus | null;
+    fetchBilling: () => Promise<void>;
 }
 
 export const useStore = create<AppState>()(
@@ -68,6 +72,7 @@ export const useStore = create<AppState>()(
             onboardingComplete: false,
             uploadQueue: [],
             uploadCompletedAt: null,
+            billing: null,
 
             setHasHydrated: (state: boolean) => {
                 set({ _hasHydrated: state });
@@ -153,6 +158,15 @@ export const useStore = create<AppState>()(
                         q => q.status !== 'done' && q.status !== 'error'
                     ),
                 }));
+            },
+
+            fetchBilling: async () => {
+                try {
+                    const billing = await api.getBillingStatus();
+                    set({ billing });
+                } catch {
+                    /* not fatal — user may not be logged in yet */
+                }
             },
         }),
         {

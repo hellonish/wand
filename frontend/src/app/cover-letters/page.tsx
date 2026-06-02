@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/utils/store';
-import { api, CoverLetter, JobListItem, JDToneAnalysis, Job } from '@/utils/api';
+import { api, CoverLetter, JobListItem, JDToneAnalysis, Job, isApiError } from '@/utils/api';
 import Header from '@/components/Header';
+import UpgradePrompt, { type UpgradePromptState } from '@/components/UpgradePrompt';
 
 // ── Shared primitives ─────────────────────────────────────────────────────────
 
@@ -72,6 +73,7 @@ function timeAgo(isoStr: string): string {
 export default function CoverLettersPage() {
     const router = useRouter();
     const { token, isAuthenticated, _hasHydrated } = useStore();
+    const [upgrade, setUpgrade] = useState<UpgradePromptState>({ open: false, kind: 'credits' });
 
     const [letters, setLetters] = useState<CoverLetter[]>([]);
     const [jobs, setJobs] = useState<JobListItem[]>([]);
@@ -206,8 +208,17 @@ export default function CoverLettersPage() {
                     ));
                 }
             }
+            useStore.getState().fetchBilling();
         } catch (err) {
-            console.error(err);
+            if (isApiError(err) && err.status === 402 && err.body?.portal_url) {
+                setUpgrade({ open: true, kind: 'past_due' });
+            } else if (isApiError(err) && err.status === 402) {
+                setUpgrade({ open: true, kind: 'credits', needed: err.body?.needed, balance: err.body?.balance });
+            } else if (isApiError(err) && err.status === 429) {
+                setUpgrade({ open: true, kind: 'rate_limit', retryAfter: err.body?.retry_after });
+            } else {
+                console.error(err);
+            }
         } finally {
             setGenerating(false);
         }
@@ -599,6 +610,8 @@ export default function CoverLettersPage() {
                     </div>
                 </div>
             )}
+
+            <UpgradePrompt {...upgrade} onClose={() => setUpgrade(s => ({ ...s, open: false }))} />
 
             {/* New letter modal */}
             {showNewModal && (

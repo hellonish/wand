@@ -40,6 +40,7 @@ const NAV_LINKS = [
   { href: '/jobs',          label: 'Jobs',           icon: 'briefcase' as IconName },
   { href: '/profile',       label: 'Profile',        icon: 'user'      as IconName },
   { href: '/cover-letters', label: 'Cover letters',  icon: 'mail'      as IconName },
+  { href: '/billing',       label: 'Billing',        icon: 'sparkles'  as IconName },
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -47,7 +48,7 @@ const NAV_LINKS = [
 export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, theme, toggleTheme } = useStore();
+  const { user, theme, toggleTheme, billing } = useStore();
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -126,22 +127,56 @@ export default function Header() {
         <div className="mt-auto flex flex-col gap-2.5">
           {collapsed ? (
             /* Expand button when collapsed */
-            <button
-              title="Expand sidebar"
-              onClick={() => setCollapsed(false)}
-              style={{
-                width: '100%', height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                borderRadius: 'var(--radius-sm)', color: 'var(--text-3)',
-                transition: 'color 140ms',
-              }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text)'; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-3)'; }}
-            >
-              <Icon name="chevron-right" size={14} />
-            </button>
+            <>
+              <button
+                title="Expand sidebar"
+                onClick={() => setCollapsed(false)}
+                style={{
+                  width: '100%', height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  borderRadius: 'var(--radius-sm)', color: 'var(--text-3)',
+                  transition: 'color 140ms',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text)'; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-3)'; }}
+              >
+                <Icon name="chevron-right" size={14} />
+              </button>
+              {billing && (
+                <button
+                  onClick={() => router.push('/billing')}
+                  title={`${billing.balance} credits`}
+                  style={{
+                    width: '100%', height: 28, display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', borderRadius: 'var(--radius-sm)',
+                    color: 'var(--accent-ink)', background: 'var(--accent-soft)',
+                    border: '1px solid var(--accent-border)', cursor: 'pointer',
+                  }}
+                >
+                  <Icon name="sparkles" size={13} />
+                </button>
+              )}
+            </>
           ) : (
             /* User card */
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 6, borderRadius: 'var(--radius-sm)' }}>
+            <>
+              {/* Credit badge */}
+              {billing && (
+                <button
+                  onClick={() => router.push('/billing')}
+                  title={`${billing.balance} credits — ${billing.plan_name} plan`}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6, height: 28, padding: '0 10px',
+                    borderRadius: 'var(--radius-sm)', background: 'var(--accent-soft)',
+                    color: 'var(--accent-ink)', fontSize: 12, fontWeight: 500,
+                    border: '1px solid var(--accent-border)', cursor: 'pointer', width: '100%',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Icon name="sparkles" size={13} />
+                  {billing.balance} credits
+                </button>
+              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 6, borderRadius: 'var(--radius-sm)' }}>
               <UserAvatar name={user?.name} picture={user?.profile_picture} size={26} style={{ fontSize: 11 }} />
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.name || 'User'}</div>
@@ -161,6 +196,7 @@ export default function Header() {
                 <Icon name="settings" size={13} />
               </button>
             </div>
+            </>
           )}
         </div>
       </aside>
@@ -188,6 +224,21 @@ export default function Header() {
               </button>
             );
           })}
+          {billing && (
+            <button
+              onClick={() => router.push('/billing')}
+              title={`${billing.balance} credits`}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 4, height: 28, padding: '0 8px',
+                borderRadius: 'var(--radius-sm)', background: 'var(--accent-soft)',
+                color: 'var(--accent-ink)', fontSize: 11.5, fontWeight: 500,
+                border: '1px solid var(--accent-border)', cursor: 'pointer',
+              }}
+            >
+              <Icon name="sparkles" size={12} />
+              {billing.balance}
+            </button>
+          )}
           <button onClick={toggleTheme} className="flex h-8 w-8 items-center justify-center" style={{ borderRadius: 'var(--radius-sm)', color: 'var(--text-2)' }}>
             <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} />
           </button>

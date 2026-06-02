@@ -3,10 +3,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/utils/store';
-import { api, UserProfile, ProfileFileListResponse, type ProfileFileType } from '@/utils/api';
+import { api, UserProfile, ProfileFileListResponse, type ProfileFileType, isApiError } from '@/utils/api';
 import Header from '@/components/Header';
 import { usePageUnloadWarning } from '@/hooks/usePageUnloadWarning';
 import ConfirmationModal from '@/components/ConfirmationModal';
+import UpgradePrompt, { type UpgradePromptState } from '@/components/UpgradePrompt';
 import DataViewerModal from '@/components/DataViewerModal';
 import UnifiedProfileView from '@/components/UnifiedProfileView';
 import ProfileFileList from '@/components/ProfileFileList';
@@ -113,6 +114,7 @@ export default function ProfilePage() {
     const [filePageSize, setFilePageSize] = useState(8);
     const [fileListData, setFileListData] = useState<ProfileFileListResponse | null>(null);
 
+    const [upgrade, setUpgrade] = useState<UpgradePromptState>({ open: false, kind: 'credits' });
     const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; fileId: string | null; filename: string }>({
         isOpen: false, fileId: null, filename: ''
     });
@@ -220,8 +222,17 @@ export default function ProfilePage() {
         try {
             await api.createUnifiedProfile();
             await loadProfile();
-        } catch {
-            alert('Failed to create Unified Profile');
+            useStore.getState().fetchBilling();
+        } catch (err) {
+            if (isApiError(err) && err.status === 402 && err.body?.portal_url) {
+                setUpgrade({ open: true, kind: 'past_due' });
+            } else if (isApiError(err) && err.status === 402) {
+                setUpgrade({ open: true, kind: 'credits', needed: err.body?.needed, balance: err.body?.balance });
+            } else if (isApiError(err) && err.status === 429) {
+                setUpgrade({ open: true, kind: 'rate_limit', retryAfter: err.body?.retry_after });
+            } else {
+                alert('Failed to create Unified Profile');
+            }
         } finally {
             setUnifying(false);
         }
@@ -455,6 +466,8 @@ export default function ProfilePage() {
                 title={dataModal.title}
                 data={dataModal.data}
             />
+
+            <UpgradePrompt {...upgrade} onClose={() => setUpgrade(s => ({ ...s, open: false }))} />
         </main>
     );
 }

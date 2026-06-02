@@ -3,10 +3,11 @@
 import { useState, useEffect, use } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/utils/store';
-import { api, Job, CoverLetter, JDToneAnalysis } from '@/utils/api';
+import { api, Job, CoverLetter, JDToneAnalysis, isApiError } from '@/utils/api';
 import Header from '@/components/Header';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
+import UpgradePrompt, { type UpgradePromptState } from '@/components/UpgradePrompt';
 
 const MODES = [
     { id: 'auto', label: 'Auto-Detect', desc: 'AI analyzes the job description and picks the best tone' },
@@ -35,6 +36,7 @@ export default function CoverLetterPage({ params }: { params: Promise<{ id: stri
 
     const [toneAnalysis, setToneAnalysis] = useState<JDToneAnalysis | null>(null);
     const [analyzingTone, setAnalyzingTone] = useState(false);
+    const [upgrade, setUpgrade] = useState<UpgradePromptState>({ open: false, kind: 'credits' });
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -107,8 +109,17 @@ export default function CoverLetterPage({ params }: { params: Promise<{ id: stri
             });
             setHistory(prev => [result, ...prev]);
             setCoverLetter(result);
-        } catch {
-            alert('Failed to generate cover letter');
+            useStore.getState().fetchBilling();
+        } catch (err) {
+            if (isApiError(err) && err.status === 402 && err.body?.portal_url) {
+                setUpgrade({ open: true, kind: 'past_due' });
+            } else if (isApiError(err) && err.status === 402) {
+                setUpgrade({ open: true, kind: 'credits', needed: err.body?.needed, balance: err.body?.balance });
+            } else if (isApiError(err) && err.status === 429) {
+                setUpgrade({ open: true, kind: 'rate_limit', retryAfter: err.body?.retry_after });
+            } else {
+                alert('Failed to generate cover letter');
+            }
         } finally {
             setGenerating(false);
         }
@@ -451,6 +462,7 @@ export default function CoverLetterPage({ params }: { params: Promise<{ id: stri
                     </div>
                 </div>
             </div>
+            <UpgradePrompt {...upgrade} onClose={() => setUpgrade(s => ({ ...s, open: false }))} />
         </main>
     );
 }

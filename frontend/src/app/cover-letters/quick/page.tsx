@@ -3,10 +3,11 @@
 import { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useStore } from '@/utils/store';
-import { api, CoverLetter, JDToneAnalysis } from '@/utils/api';
+import { api, CoverLetter, JDToneAnalysis, isApiError } from '@/utils/api';
 import Header from '@/components/Header';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
+import UpgradePrompt, { type UpgradePromptState } from '@/components/UpgradePrompt';
 
 const MODES = [
     { id: 'auto', label: 'Auto-Detect', desc: 'Wand reads the job description and selects the tone that best fits this role.' },
@@ -22,6 +23,8 @@ function QuickCoverLetterContent() {
     const { token, isAuthenticated, _hasHydrated } = useStore();
 
     const viewLetterId = searchParams.get('view');
+
+    const [upgrade, setUpgrade] = useState<UpgradePromptState>({ open: false, kind: 'credits' });
 
     const [jdText, setJdText] = useState('');
     const [companyName, setCompanyName] = useState('');
@@ -129,8 +132,17 @@ function QuickCoverLetterContent() {
             });
             setHistory(prev => [result, ...prev]);
             setCoverLetter(result);
-        } catch {
-            alert('Failed to generate cover letter');
+            useStore.getState().fetchBilling();
+        } catch (err) {
+            if (isApiError(err) && err.status === 402 && err.body?.portal_url) {
+                setUpgrade({ open: true, kind: 'past_due' });
+            } else if (isApiError(err) && err.status === 402) {
+                setUpgrade({ open: true, kind: 'credits', needed: err.body?.needed, balance: err.body?.balance });
+            } else if (isApiError(err) && err.status === 429) {
+                setUpgrade({ open: true, kind: 'rate_limit', retryAfter: err.body?.retry_after });
+            } else {
+                alert('Failed to generate cover letter');
+            }
         } finally {
             setGenerating(false);
         }
@@ -470,6 +482,7 @@ function QuickCoverLetterContent() {
                     </div>
                 </div>
             </div>
+            <UpgradePrompt {...upgrade} onClose={() => setUpgrade(s => ({ ...s, open: false }))} />
         </main>
     );
 }

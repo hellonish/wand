@@ -46,6 +46,9 @@ export default function RootLayout({
     if (_hasHydrated && token && useStore.getState().user === null) {
       fetchUser();
     }
+    if (_hasHydrated && token) {
+      useStore.getState().fetchBilling();
+    }
   }, [_hasHydrated, token, fetchUser]);
 
   useEffect(() => {

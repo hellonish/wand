@@ -4,7 +4,9 @@ import { useState, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { api, JobTrackCreate, type JobStatus } from '@/utils/api';
+import { api, JobTrackCreate, type JobStatus, isApiError } from '@/utils/api';
+import { useStore } from '@/utils/store';
+import UpgradePrompt, { type UpgradePromptState } from '@/components/UpgradePrompt';
 
 /** Status options for the Track mode dropdown. */
 const STATUS_OPTIONS = ['tracked', 'applied', 'interview', 'offer', 'rejected', 'archived'] as const;
@@ -58,6 +60,9 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
     // Shared
     const [isCreating, setIsCreating] = useState(false);
 
+    // Upgrade prompt
+    const [upgrade, setUpgrade] = useState<UpgradePromptState>({ open: false, kind: 'credits' });
+
     // SSR mount effect
     useEffect(() => { setMounted(true); return () => setMounted(false); }, []);
 
@@ -98,12 +103,21 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
             resetForm();
             onClose();
             onJobCreated?.(newJob.id);
+            useStore.getState().fetchBilling();
         } catch (error) {
-            const code = (error as Error & { code?: string }).code;
-            if (code) {
-                setErrorCode(code);
+            if (isApiError(error) && error.status === 402 && error.body?.portal_url) {
+                setUpgrade({ open: true, kind: 'past_due' });
+            } else if (isApiError(error) && error.status === 402) {
+                setUpgrade({ open: true, kind: 'credits', needed: error.body?.needed, balance: error.body?.balance });
+            } else if (isApiError(error) && error.status === 429) {
+                setUpgrade({ open: true, kind: 'rate_limit', retryAfter: error.body?.retry_after });
             } else {
-                console.error('Failed to create job:', error);
+                const code = (error as Error & { code?: string }).code;
+                if (code) {
+                    setErrorCode(code);
+                } else {
+                    console.error('Failed to create job:', error);
+                }
             }
         } finally {
             setIsCreating(false);
@@ -139,7 +153,9 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
 
     // ── Render ─────────────────────────────────────────────────────────
 
-    return createPortal(
+    return (
+        <>
+        {createPortal(
         <AnimatePresence>
             {isOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -519,5 +535,8 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
             )}
         </AnimatePresence>,
         document.body,
+        )}
+        <UpgradePrompt {...upgrade} onClose={() => setUpgrade(s => ({ ...s, open: false }))} />
+        </>
     );
 }
