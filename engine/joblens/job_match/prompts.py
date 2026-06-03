@@ -179,6 +179,7 @@ Output contract:
 - Do not invent evidence. If profile evidence is absent, mark the gap.
 
 {_shared_scoring_rules()}
+- If company_summary is provided, use it to calibrate domain_relevance and technical_skills scores — a candidate whose background matches the company's actual tech stack should score higher than one who only matches the JD keywords.
 
 Structured output schema (JobMatchScoreLLMResponse):
 {schema}
@@ -192,6 +193,8 @@ Structured output schema (JobMatchScoreLLMResponse):
     }
     if request.base_resume_text is not None:
         payload["base_resume_text"] = request.base_resume_text
+    if request.company_summary:
+        payload["company_summary"] = request.company_summary
 
     user = "\n".join([
         "Score this UnifiedProfile against this JobDescriptionBreakdownResult.",

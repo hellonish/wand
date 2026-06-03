@@ -1,13 +1,15 @@
 """Company-intel orchestration service."""
 
 from datetime import datetime, timezone
-from typing import Any, List, Sequence
+from typing import Any, List, Optional, Sequence
+from urllib.parse import urlparse
 
 import requests
 import trafilatura
 from bs4 import BeautifulSoup
 
 import engine.inference as inference
+from engine.joblens.reachout.helpers import search_ddgs
 from engine.utils import dedupe_warning_strings
 
 from .helpers import (
@@ -88,6 +90,8 @@ class CompanyIntelService:
         """Create candidate pages from the company input."""
 
         seeds: List[DiscoveredCompanyPage] = []
+        company_name = company_input.company_name or ""
+
         if company_input.website:
             website = normalize_website(company_input.website)
             seeds.append(
@@ -101,7 +105,20 @@ class CompanyIntelService:
             seeds.extend(common_path_pages(website))
             return dedupe_pages(seeds)[: company_input.max_pages]
 
-        for url in guess_company_domains(company_input.company_name or ""):
+        resolved = self._resolve_domain_via_search(company_name)
+        if resolved:
+            seeds.append(
+                DiscoveredCompanyPage(
+                    url=resolved,
+                    page_type=PageType.HOMEPAGE,
+                    confidence=0.7,
+                    discovery_method=DiscoveryMethod.INPUT_WEBSITE,
+                )
+            )
+            seeds.extend(common_path_pages(resolved))
+            return dedupe_pages(seeds)[: company_input.max_pages]
+
+        for url in guess_company_domains(company_name):
             seeds.append(
                 DiscoveredCompanyPage(
                     url=url,
@@ -111,6 +128,38 @@ class CompanyIntelService:
                 )
             )
         return dedupe_pages(seeds)[: company_input.max_pages]
+
+    def _resolve_domain_via_search(self, company_name: str) -> Optional[str]:
+        """Return the scheme+netloc of the company's official website via search, or None."""
+
+        if not company_name:
+            return None
+
+        _NOISY_DOMAINS = {
+            "linkedin.com",
+            "indeed.com",
+            "glassdoor.com",
+            "crunchbase.com",
+            "wikipedia.org",
+            "twitter.com",
+        }
+
+        query = f'"{company_name}" official website'
+        try:
+            results = search_ddgs(query, limit=3)
+        except Exception:
+            return None
+
+        for result in results:
+            parsed = urlparse(result.url)
+            netloc = parsed.netloc.lower().removeprefix("www.")
+            if not netloc:
+                continue
+            if any(netloc == d or netloc.endswith(f".{d}") for d in _NOISY_DOMAINS):
+                continue
+            return f"{parsed.scheme}://{parsed.netloc}"
+
+        return None
 
     def _fetch_page(self, page: DiscoveredCompanyPage) -> FetchedCompanyPage:
         """Fetch and normalize one company page."""

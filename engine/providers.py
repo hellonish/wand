@@ -17,6 +17,7 @@ DeepSeekClient — plain OpenAI SDK + response_format={"type":"json_object"}.
 """
 
 import json
+import logging
 import os
 import random
 import re
@@ -32,6 +33,9 @@ from openai import OpenAI
 
 from engine.usage import Usage, UsageCollector
 
+_log = logging.getLogger(__name__)
+_MAX_INPUT_CHARS = int(os.getenv("LLM_MAX_INPUT_CHARS", 400_000))
+
 
 # ─── Debug capture ────────────────────────────────────────────────────────────
 
@@ -46,6 +50,29 @@ def _debug_capture(step: str, messages: List[Dict], raw_response: Any) -> None:
 
 
 # ─── Shared helpers ───────────────────────────────────────────────────────────
+
+def _truncate_if_needed(
+    messages: List[Dict[str, str]],
+    max_chars: int,
+) -> List[Dict[str, str]]:
+    total = sum(len(m.get("content", "")) for m in messages)
+    if total <= max_chars:
+        return messages
+    budget = max_chars - (total - max(len(m.get("content", "")) for m in messages))
+    messages = list(messages)
+    longest_idx = max(range(len(messages)), key=lambda i: len(messages[i].get("content", "")))
+    original = messages[longest_idx]["content"]
+    suffix = "\n[... truncated to fit context limit]"
+    truncated = original[: budget - len(suffix)] + suffix
+    messages[longest_idx] = {**messages[longest_idx], "content": truncated}
+    _log.warning(
+        "Input truncated from %d to %d chars (longest message shortened by %d chars)",
+        total,
+        sum(len(m.get("content", "")) for m in messages),
+        len(original) - len(truncated),
+    )
+    return messages
+
 
 def _extract_json(text: str) -> str:
     """Strip markdown code fences and return the first JSON block found."""
@@ -186,6 +213,7 @@ class XAIClient:
         max_retries: int = 2,
         step: str = "",
     ) -> Any:
+        messages = _truncate_if_needed(messages, _MAX_INPUT_CHARS)
         t0 = time.perf_counter()
 
         def _call():
@@ -260,6 +288,7 @@ class DeepSeekClient:
         max_retries: int = 0,
         step: str = "",
     ) -> Any:
+        messages = _truncate_if_needed(messages, _MAX_INPUT_CHARS)
         messages = _inject_response_schema(messages, response_model)
         messages = _ensure_json_word(messages)
         max_tok = min(max_tokens or self._DEFAULT_MAX_TOKENS, self._MAX_OUTPUT_TOKENS)

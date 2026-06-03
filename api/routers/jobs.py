@@ -232,13 +232,17 @@ def _gather_company_intel(
     return result, False
 
 
-def _score_match(profile: Optional[UnifiedProfile], job_description: JobDescriptionBreakdownResult) -> JobMatchScore:
+def _score_match(
+    profile: Optional[UnifiedProfile],
+    job_description: JobDescriptionBreakdownResult,
+    company_summary: str | None = None,
+) -> JobMatchScore:
     """Phase A — score + evidence, no resume actions."""
     if not profile:
         raise ValueError("No unified profile available.")
     from engine.joblens.job_match.models import JobMatchRequest
     llm = get_llm("job_match")
-    request = JobMatchRequest(profile=profile, job_description=job_description)
+    request = JobMatchRequest(profile=profile, job_description=job_description, company_summary=company_summary)
     response = inference.score_job_match(llm, request)
     from engine.utils import dedupe_warning_strings
     score = response.result
@@ -586,26 +590,24 @@ async def run_job_analysis_background(
                 _emit(user_id, session_id, job_id, step, "joblens_step_failed", {"error": str(error)})
                 return None
 
-        # Wave 2 — three steps run in parallel.
-        # match_analysis = Phase A only (score + evidence, no resume actions).
-        # resume_actions (Phase B) runs in Wave 3, after Phase A completes.
+        # Wave 2a — company_intel runs first so its slim_summary can ground match scoring.
+        _emit(user_id, session_id, job_id, "company_intel", "joblens_step_started")
+        try:
+            def _do_company_intel():
+                with SessionLocal() as _db:
+                    return _gather_company_intel(job_description, company_website, _db)
+            _t0 = time.perf_counter()
+            company_intel, _ci_hit = await asyncio.to_thread(_do_company_intel)
+            _emit(user_id, session_id, job_id, "company_intel", "joblens_step_complete",
+                  {"data": _slim_company_intel(company_intel), "cache_hit": _ci_hit,
+                   "duration_ms": round((time.perf_counter() - _t0) * 1000, 1)})
+        except Exception as _ci_error:
+            _emit(user_id, session_id, job_id, "company_intel", "joblens_step_failed", {"error": str(_ci_error)})
+            company_intel = None
 
-        # company_intel and reachout use slim serializers to drop large unused fields.
-        async def run_company_intel():
-            _emit(user_id, session_id, job_id, "company_intel", "joblens_step_started")
-            try:
-                def _do_company_intel():
-                    with SessionLocal() as _db:
-                        return _gather_company_intel(job_description, company_website, _db)
-                _t0 = time.perf_counter()
-                result, hit = await asyncio.to_thread(_do_company_intel)
-                _emit(user_id, session_id, job_id, "company_intel", "joblens_step_complete",
-                      {"data": _slim_company_intel(result), "cache_hit": hit, "duration_ms": round((time.perf_counter() - _t0) * 1000, 1)})
-                return result
-            except Exception as error:
-                _emit(user_id, session_id, job_id, "company_intel", "joblens_step_failed", {"error": str(error)})
-                return None
+        _company_summary: str | None = getattr(company_intel, "slim_summary", None)
 
+        # Wave 2b — match_analysis (with company context) and reachout run in parallel.
         async def run_reachout():
             _emit(user_id, session_id, job_id, "reachout", "joblens_step_started")
             try:
@@ -617,17 +619,17 @@ async def run_job_analysis_background(
                 _t0 = time.perf_counter()
                 result, hit = await asyncio.to_thread(_do_reachout)
                 _emit(user_id, session_id, job_id, "reachout", "joblens_step_complete",
-                      {"data": _slim_reachout(result), "cache_hit": hit, "duration_ms": round((time.perf_counter() - _t0) * 1000, 1)})
+                      {"data": _slim_reachout(result), "cache_hit": hit,
+                       "duration_ms": round((time.perf_counter() - _t0) * 1000, 1)})
                 return result
             except Exception as error:
                 _emit(user_id, session_id, job_id, "reachout", "joblens_step_failed", {"error": str(error)})
                 return None
 
-        company_intel, match_score, reachout = await asyncio.gather(
-            run_company_intel(),
+        match_score, reachout = await asyncio.gather(
             run_parallel_section(
                 "match_analysis",
-                lambda: _score_match(profile_snapshot, job_description),
+                lambda: _score_match(profile_snapshot, job_description, _company_summary),
             ),
             run_reachout(),
         )
@@ -1096,6 +1098,9 @@ async def analyze_job(
         db.add(session)
         db.flush()
         job.joblens_session_id = session.id
+
+    if job.status == JobStatus.ANALYZING:
+        return job
 
     job.status = JobStatus.ANALYZING
     db.commit()

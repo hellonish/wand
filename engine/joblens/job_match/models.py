@@ -121,6 +121,10 @@ class JobMatchRequest(StrictJobMatchModel):
         default_factory=list,
         description="All resume files tagged by the user. AI picks the best one for this JD.",
     )
+    company_summary: Optional[str] = Field(
+        default=None,
+        description="2-3 sentence company summary (product domain, tech stack, size) from company intel. Used to ground domain_relevance scoring.",
+    )
 
 
 class EvidenceItem(StrictJobMatchModel):

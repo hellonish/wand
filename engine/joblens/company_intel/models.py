@@ -229,6 +229,10 @@ class CompanyIntelResult(StrictCompanyIntelModel):
     """Unified output for company intelligence."""
 
     input: CompanyIntelInput
+    slim_summary: Optional[str] = Field(
+        default=None,
+        description="2-3 sentence summary of the company: product domain, tech stack, and approximate size. Used by downstream job matching."
+    )
     identity: CompanyIdentity = Field(default_factory=CompanyIdentity)
     product_signals: List[ProductSignal] = Field(default_factory=list)
     engineering_presence: EngineeringPresence = Field(default_factory=EngineeringPresence)
@@ -247,6 +251,10 @@ class CompanyIntelLLMResult(StrictCompanyIntelModel):
     """
 
     input: CompanyIntelInput
+    slim_summary: Optional[str] = Field(
+        default=None,
+        description="2-3 sentence summary of the company: product domain, tech stack, and approximate size. Used by downstream job matching."
+    )
     identity: CompanyIdentity = Field(default_factory=CompanyIdentity)
     product_signals: List[ProductSignal] = Field(default_factory=list)
     engineering_presence: EngineeringPresence = Field(default_factory=EngineeringPresence)

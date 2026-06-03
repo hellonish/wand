@@ -46,12 +46,13 @@ Output contract:
 
 Extraction workflow:
 1. Normalize identity: name, website, canonical domain, description, mission, industry, stage/scale, founding or location/distribution signals.
-2. Extract product/platform signals: what the company builds, users/customers, product categories, adoption, scale, and developer-facing products.
-3. Identify engineering presence: engineering blog URL, engineering blog title, sampled engineering posts, and recurring technical topics.
-4. Extract technical signals: languages, frameworks, infrastructure, cloud, databases, data/AI/ML, security, reliability, developer tools, and architecture patterns.
-5. Extract engineering culture: quality bar, open-source posture, developer experience, collaboration style, working style, and values.
-6. Extract hiring signals: careers URL, locations, remote/work-mode hints, team structure, values or interview signals.
-7. Add warnings for weak crawl coverage, missing about page, missing engineering blog, or pages that look like generic blog indexes only.
+2. Write slim_summary: Write 2-3 sentences covering (1) what the company builds or does, (2) the core technologies or platforms it uses, and (3) its approximate size or stage (startup, growth, enterprise). This field is used by the job-match step — be specific about tech stack, not generic. Example: "Stripe is a payments infrastructure company building APIs for online commerce. Their stack includes Ruby, Go, and Scala, with heavy use of AWS and custom distributed systems. They are a late-stage private company with ~8,000 employees."
+3. Extract product/platform signals: what the company builds, users/customers, product categories, adoption, scale, and developer-facing products.
+4. Identify engineering presence: engineering blog URL, engineering blog title, sampled engineering posts, and recurring technical topics.
+5. Extract technical signals: languages, frameworks, infrastructure, cloud, databases, data/AI/ML, security, reliability, developer tools, and architecture patterns.
+6. Extract engineering culture: quality bar, open-source posture, developer experience, collaboration style, working style, and values.
+7. Extract hiring signals: careers URL, locations, remote/work-mode hints, team structure, values or interview signals.
+8. Add warnings for weak crawl coverage, missing about page, missing engineering blog, or pages that look like generic blog indexes only.
 
 Page interpretation rules:
 - `homepage` often supports identity, product, audience, and scale.

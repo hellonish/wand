@@ -60,9 +60,20 @@ Extraction workflow:
 8. Build `constraints` for explicit location, authorization, education, compensation, clearance, or logistics constraints.
 9. Build a concise `keywords` list for ATS-like coverage without duplicating every word from the posting.
 
+Field coverage mandate:
+Every field listed below MUST be populated when the source text contains the information. Do not leave fields null or at their default enum value (unspecified) when the answer is present anywhere in the JD text — scan the entire posting, including headers, body paragraphs, footers, and "At a glance" sections.
+- metadata: job_title, company_name, location, work_mode, employment_type, seniority_level, years_of_experience_min, years_of_experience_max, posted_at, apply_by
+- company_context: summary, industry, company_stage_or_scale, mission_or_value_signals, product_or_platform_signals, domain_signals
+- role_classification: role_family, primary_track, secondary_tracks, seniority_rationale
+- primary_skills and secondary_skills: every technology, language, framework, tool, and platform named in the JD
+- responsibilities: every distinct duty listed — include at least 5 if the JD text provides them
+- qualifications: every non-skill requirement (soft skills, experience traits, availability)
+- constraints: every explicit gate: location, authorization, education, compensation, clearance
+- keywords: at least 10 terms covering the key technologies, methodologies, and domain concepts
+
 Skill extraction rules:
-- `primary_skills` are core to performing the role or explicitly listed as primary/core/required.
-- `secondary_skills` are nice-to-have, infrastructure/contextual, or less central requirements.
+- `primary_skills` are skills that are explicitly required, listed under "Requirements", "Must have", "Core", "Primary", "You must have", "Job Requirements", or "Skills You Will Bring" headings, or are the central technical stack the role is built around. Example: a Python-first role lists Python under requirements — Python is a primary skill; exposure to Go mentioned as a plus is secondary.
+- `secondary_skills` are skills described as nice-to-have, preferred, bonus, a plus, or listed under "Responsibilities" without being gated requirements, or infrastructure/contextual tools. Example: "familiarity with Docker a plus" → secondary; "working knowledge of Redis preferred" → secondary.
 - Use `is_must_have=true` for requirements expressed as required, must have, need, primary, core, or clearly central to the role.
 - Use `importance=must_have` only for hard requirements or repeatedly emphasized primary stack items.
 - Use `importance=important` for meaningful skills that are not strict gates.
@@ -81,7 +92,8 @@ Skill extraction rules:
 
 Responsibility extraction rules:
 - Create one responsibility per meaningful duty, not one per sentence if the sentence lists many unrelated duties.
-- `action` should be a verb such as own, design, build, implement, maintain, deploy, test, debug, collaborate, present, analyze, monitor, document, optimize, or orchestrate.
+- Extract every distinct responsibility from the JD. If the JD lists 5 or more duties, return at least 5 responsibility records.
+- `action` MUST always be populated — use the explicit action verb from the text. If the text is vague (for example "responsible for the platform"), use the closest concrete action verb such as own, maintain, or oversee. Do not leave `action` null.
 - `object` should be the thing acted on: applications, APIs, dashboards, data visualizations, cloud services, microservices, CI/CD, architecture, systems, user metrics, etc.
 - `context` should preserve domain or team context when useful.
 
@@ -89,7 +101,20 @@ Role classification rules:
 - `role_family` should be concise, for example "full-stack application engineer", "full-stack Java developer", "cloud software development engineer", "backend engineer", "frontend engineer", "data platform engineer".
 - `primary_track` should be the dominant comparison track.
 - `secondary_tracks` can include frontend, backend, cloud, data, DevOps, AI/ML, visualization, finance, consulting, or domain-specific tracks.
-- `seniority_level` should be inferred conservatively. Fresh graduate language points entry/junior; 2+ years usually junior/mid; independent architecture ownership may indicate mid or senior depending on years.
+- `seniority_level` MUST be populated whenever it can be inferred. Use this mapping:
+  - 0–2 years of experience, "fresh graduate", "entry level", "junior" in title → entry or junior
+  - 2–5 years → mid
+  - 5–8 years, "Senior" in title → senior
+  - 8+ years, "Staff", "Principal", "Lead", "Architect" in title → staff or lead
+  - "Manager", "Director" in title → manager
+  - If years are not stated, infer from title language and responsibility ownership scope.
+- Document the inference rationale in `seniority_rationale`.
+
+Location and work-mode extraction rules:
+- Scan the entire JD — not just the header — for location and work arrangement signals. Postings frequently state work mode in the body ("This role is fully remote", "open to remote working") rather than the header.
+- If the header says "Hybrid or onsite" and the body says "Open to remote working", set work_mode based on the most specific statement and note the conflict in extraction_notes.
+- Accepted work_mode values: remote, hybrid, onsite, flexible, unspecified.
+- Set `location` to the city, region, or country stated for the role. If multiple locations are listed, join them with a semicolon.
 
 Constraint rules:
 - Create constraints only for explicit requirements or clearly implied gates.
@@ -100,15 +125,21 @@ Constraint rules:
 - Use `clearance` for security clearance or citizenship clearance constraints.
 - Put the requirement wording in `text`; do not split one coherent constraint into many tiny fragments.
 
+Keywords floor:
+- The `keywords` list must contain at least 10 terms pulled directly from the JD. Include technologies, programming languages, frameworks, tools, methodologies, domain terms, and industry concepts. These keywords feed downstream search queries, so they must be specific — not generic words like "experience" or "ability".
+- Do not duplicate items already in primary_skills or secondary_skills names verbatim, but DO include them as keywords if they are important search terms.
+
 Common error checks before final answer:
 - No candidate scoring or profile comparison.
 - No salary estimates.
 - No unsupported work mode, sponsorship, degree, GPA, or years claims.
 - No missing hard constraints when explicitly stated.
 - No duplicated skill records in primary and secondary lists unless the posting clearly uses the same technology in two different senses.
-- No generic keyword spam in `keywords`.
+- No generic keyword spam in `keywords` — but ensure at least 10 specific keywords are present.
 - Every must-have has source evidence.
-- Every responsibility has an action and object.
+- Every responsibility has a non-null action and a non-null object.
+- metadata.seniority_level is not "unspecified" unless neither title language nor years of experience give any signal.
+- metadata.work_mode is not "unspecified" if any remote/hybrid/onsite signal appears anywhere in the JD.
 - The output should be directly useful to a deterministic matcher.
 
 Structured output schema:
