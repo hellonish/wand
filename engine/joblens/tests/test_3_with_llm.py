@@ -344,12 +344,6 @@ class TestJobMatchLLM:
                 if c.risk_or_gap:
                     print(f"      risk: {c.risk_or_gap}")
 
-            print(f"\n  DOMAIN MATCHES  ({len(score.domain_matches)})")
-            for d in score.domain_matches:
-                print(f"    {d.target:<30} → {d.match_level.value}")
-                if d.rationale:
-                    print(f"      rationale: {d.rationale}")
-
             if response.warnings or score.warnings:
                 print(f"\n  WARNINGS: {[*response.warnings, *score.warnings]}")
         return score
@@ -673,7 +667,6 @@ def test_output_to_frontend_mapping(capsys):
         print(f"  skill_matches count      = {len(result.skill_matches)}")
         print(f"  constraints count        = {len(result.constraints)}")
         print(f"  responsibility_matches   = {len(result.responsibility_matches)}")
-        print(f"  domain_matches           = {len(result.domain_matches)}")
         print(f"  update_actions           = {len(result.update_actions)}")
         print(f"  replace_actions          = {len(result.replace_actions)}")
         print(f"  delete_actions           = {len(result.delete_actions)}")
@@ -686,13 +679,10 @@ def test_output_to_frontend_mapping(capsys):
   1. responsibility_matches — engine produces these but confirm the
      frontend has a UI slot for them (responsibilities tab/section).
 
-  2. domain_matches — engine produces domain-level match data but
-     check if the frontend renders it or ignores it.
-
-  3. selected_actions — engine returns a curated list but the frontend
+  2. selected_actions — engine returns a curated list but the frontend
      should prefer this over iterating update/replace/delete separately.
 
-  4. score_components — the rubric uses 7 named components:
+  3. score_components — the rubric uses 7 named components:
        technical_skills (30), responsibilities (25), project_evidence (15),
        domain_relevance (10), seniority_and_ownership (10),
        education_and_logistics (5), keyword_coverage (5)

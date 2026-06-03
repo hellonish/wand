@@ -174,7 +174,7 @@ Resume actions are handled in a separate phase with full context from this outpu
 Output contract:
 - Return only data fitting JobMatchScoreLLMResponse: {{ result: JobMatchScore, warnings: [] }}
 - JobMatchScore has: summary, score_components, constraints, skill_matches,
-  responsibility_matches, domain_matches, warnings.
+  responsibility_matches, warnings.
 - Do NOT include update_actions, replace_actions, delete_actions, or selected_actions.
 - Do not invent evidence. If profile evidence is absent, mark the gap.
 

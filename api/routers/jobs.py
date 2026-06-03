@@ -1187,6 +1187,13 @@ async def analyze_job(
         job.joblens_session_id = session.id
 
     if job.status == JobStatus.ANALYZING:
+        if ctx.ref and ctx.charge:
+            bg_settle_failure(
+                user_id=ctx.user_id,
+                task_type="job_analysis",
+                ref=ctx.ref,
+                tracker_keys=list(ctx._tracker._incremented),
+            )
         return job
 
     job.status = JobStatus.ANALYZING
