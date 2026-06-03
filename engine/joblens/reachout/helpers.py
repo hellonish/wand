@@ -1,6 +1,7 @@
 """Helper functions for reachout discovery."""
 
 import os
+import random
 import re
 import time
 from typing import Callable, Dict, Iterable, List, Optional
@@ -100,42 +101,53 @@ def infer_person_fields(result: SearchResult) -> tuple[str | None, str | None, s
     return name, role, company
 
 
+_DDG_HTML_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
+    "Mozilla/5.0 (X11; Linux x86_64; rv:125.0) Gecko/20100101 Firefox/125.0",
+]
+
+
 def search_duckduckgo_html(query: str, limit: int, session=None, timeout: int = 15) -> List[SearchResult]:
     """Return DuckDuckGo HTML endpoint search results."""
 
-    search_session = session or requests.Session()
-    response = search_session.post(
-        "https://html.duckduckgo.com/html/",
-        data={"q": query},
-        timeout=timeout,
-        headers={"User-Agent": "Mozilla/5.0 reachout-search"},
-    )
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-    results: List[SearchResult] = []
-    for rank, row in enumerate(soup.select(".result"), start=1):
-        link = row.select_one(".result__a")
-        if not link:
-            continue
-        title = link.get_text(" ", strip=True)
-        url = _decode_duckduckgo_redirect(link.get("href", ""))
-        snippet_node = row.select_one(".result__snippet")
-        snippet = snippet_node.get_text(" ", strip=True) if snippet_node else None
-        if not title or not url:
-            continue
-        results.append(
-            SearchResult(
-                title=title,
-                url=url,
-                snippet=snippet,
-                query=query,
-                rank=rank,
-                source="duckduckgo_html",
-            )
+    try:
+        time.sleep(random.uniform(1.0, 2.0))
+        search_session = session or requests.Session()
+        response = search_session.post(
+            "https://html.duckduckgo.com/html/",
+            data={"q": query},
+            timeout=timeout,
+            headers={"User-Agent": random.choice(_DDG_HTML_USER_AGENTS)},
         )
-        if len(results) >= limit:
-            break
-    return results
+        response.raise_for_status()
+        soup = BeautifulSoup(response.text, "html.parser")
+        results: List[SearchResult] = []
+        for rank, row in enumerate(soup.select(".result"), start=1):
+            link = row.select_one(".result__a")
+            if not link:
+                continue
+            title = link.get_text(" ", strip=True)
+            url = _decode_duckduckgo_redirect(link.get("href", ""))
+            snippet_node = row.select_one(".result__snippet")
+            snippet = snippet_node.get_text(" ", strip=True) if snippet_node else None
+            if not title or not url:
+                continue
+            results.append(
+                SearchResult(
+                    title=title,
+                    url=url,
+                    snippet=snippet,
+                    query=query,
+                    rank=rank,
+                    source="duckduckgo_html",
+                )
+            )
+            if len(results) >= limit:
+                break
+        return results
+    except Exception:
+        return []
 
 
 def search_ddgs(
@@ -184,11 +196,15 @@ def search_ddgs(
                     )
                 )
             return results
-        except DDGSException as exc:
+        except Exception as exc:
             last_exc = exc
             if attempt < retries - 1:
-                time.sleep(backoff ** attempt)
-    raise last_exc
+                # Rate-limit responses need a longer cooldown before retry.
+                if "ratelimit" in str(exc).lower():
+                    time.sleep(3)
+                else:
+                    time.sleep(random.uniform(0.5, 1.5))
+    return []
 
 
 def search_google_programmable(

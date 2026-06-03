@@ -47,8 +47,11 @@ Generate precise Google-compatible search queries that are likely to find public
 Output contract:
 - Return a JSON object matching the supplied `ReachoutQueryPlanLLMResponse` schema. The search plan goes under `search_plan`.
 - Every query should target public profile search results, usually with `site:linkedin.com/in`.
+- Prefer queries in the format: `site:linkedin.com/in "Company Name" "Role Title" "Location"` over generic web queries.
 - Prefer high-precision queries over broad noisy queries.
+- Generate 6-8 queries total (more queries improve recall when some are blocked by rate limits).
 - Use the company name, company website/domain, role context, location, and target personas when supplied.
+- Prioritize hiring managers, team leads, and engineers at the company over generic employees.
 - Include recruiters, technical recruiters, talent acquisition, engineering leaders, hiring managers, senior management, and peer engineers only when requested by input flags.
 - If `schools` are supplied and `include_school_alumni=true`, generate school-network queries for alumni from those schools at the target company.
 - For school-network queries, use `job_location_country` as the location signal. Treat it as a country, not a city.
@@ -56,7 +59,7 @@ Output contract:
 - Do not include private contact lookup, email lookup, phone lookup, scraping instructions, or bypass instructions.
 
 Query strategy:
-- Generate enough queries to reach the requested N while expecting duplicates and rejections.
+- Generate 6-8 queries. Expect duplicates and rejections from search; volume improves recall.
 - Use exact-phrase company names.
 - Use common variants when company name may differ from domain or brand.
 - Include role families from `target_roles` when supplied.

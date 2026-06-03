@@ -216,37 +216,20 @@ def build_resume_actions_messages(
 
     if has_candidates:
         resume_instructions = f"""
-Resume selection (MANDATORY — do this first before generating any actions):
-- You are given {len(request.resume_candidates)} resume file(s) in `resume_candidates`.
-- Read ALL resume files, then select the ONE that best fits this specific job description
-  based on skill relevance, experience framing, and keyword alignment with the JD.
-- You MUST set `selected_resume_filename` to the exact filename string of the chosen resume.
-  Omitting or nulling `selected_resume_filename` is an error.
-- Every `target_text` value MUST be an exact quote or close paraphrase of a real line
-  from the SELECTED resume's text. Do NOT pull `target_text` from profile fields,
-  the match_score, or any other source.
-- `suggested_text` must be grounded in evidence from the match_score and the selected resume
-  — no invented metrics.
-
-Length preservation (STRICT):
-- The total bullet/line count of the resume MUST stay the same after all actions are applied.
-- Every update_action rewrites one existing line — no net change in count.
-- Every replace_action swaps one existing line for a stronger one — no net change in count.
-- delete_actions remove lines. If you add net-new content via an update/replace that expands
-  to more lines than the original, you MUST include a delete_action to compensate.
-- Do NOT suggest adding new sections or new bullet points without removing an equal number.
+Resume selection (MANDATORY — do this first):
+- You are given {len(request.resume_candidates)} resume file(s). Select the ONE that best fits this JD based on skill
+  relevance, experience framing, and keyword alignment.
+- Set selected_resume_filename to the exact filename of the chosen resume.
+- target_text MUST be an exact or near-exact quote from the SELECTED resume's text.
+- suggested_text may draw truthful additional detail from the profile if provided.
 """.strip()
     elif has_single:
         resume_instructions = """
 Resume text usage:
 - `base_resume_text` is the authoritative source. Quote or closely paraphrase actual lines
   so the candidate knows exactly what to change.
-- `suggested_text` must be grounded in real profile evidence — no invented metrics.
-
-Length preservation (STRICT):
-- The total bullet/line count of the resume MUST stay the same after all actions are applied.
-- update_action and replace_action each rewrite ONE existing line.
-- If any action adds more lines than it removes, include compensating delete_actions.
+- suggested_text may draw truthful additional detail from the profile if provided.
+- Do not invent metrics or experience not present in profile evidence.
 """.strip()
     else:
         resume_instructions = """
@@ -264,11 +247,23 @@ resume actions that help the candidate tailor their resume for this job.
 
 {resume_instructions}
 
+Gap coverage (REQUIRED):
+- For every item in match_score.summary.biggest_gaps, produce at least one action that
+  addresses it. If the profile has no evidence to fix the gap, note it in warnings instead.
+- For every skill_match with match_level MISSING or TRANSFERABLE where importance is
+  "must_have" or "important", produce at least one action.
+- For every responsibility_match with evidence_score < 2 and importance "must_have",
+  produce at least one action.
+
+Output volume:
+- Produce 5 to 9 high-impact actions total across update_actions, replace_actions, and delete_actions.
+- selected_actions must contain exactly the top 5 by expected impact, drawn from the three lists above.
+- Do not pad with low-value actions to hit the minimum. Quality over quantity.
+
 Output contract:
 - Return only data fitting ResumeActionsLLMResponse: {{ result: ResumeActions, warnings: [] }}
 - ResumeActions has: selected_resume_filename, update_actions, replace_actions, delete_actions, selected_actions, warnings.
 - Do not add fake metrics. If no metric exists, use impact wording without a number.
-- selected_actions must be a concise prioritised subset across update/replace/delete.
 
 {_shared_action_rules()}
 
@@ -280,11 +275,10 @@ Structured output schema (ResumeActionsLLMResponse):
     _drop_source_phrases(jd_data)
 
     if has_candidates:
-        # Omit `profile` so target_text can only be grounded in the selected resume's text.
-        # The match_score already carries all the evidence and gap context needed.
         payload: dict = {
             "job_description": jd_data,
             "match_score": score.model_dump(mode="json"),
+            "profile": request.profile.model_dump(mode="json"),
             "resume_candidates": [
                 {"filename": c.filename, "text": c.text}
                 for c in request.resume_candidates

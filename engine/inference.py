@@ -73,6 +73,7 @@ def parse_profile(
         messages=build_profile_parser_messages(documents),
         temperature=0.0,
         max_tokens=24000,
+        step="parse_profile",
     )
 
 
@@ -86,6 +87,7 @@ def extract_long_form_sections(
         messages=build_long_form_section_messages([document]),
         temperature=0.0,
         max_tokens=24000,
+        step="extract_long_form_sections",
     )
 
 
@@ -99,6 +101,7 @@ def merge_long_form_versions(
         messages=build_long_form_merge_messages(sections),
         temperature=0.0,
         max_tokens=24000,
+        step="merge_long_form_versions",
     )
 
 
@@ -139,6 +142,7 @@ def unify_profiles(
         ],
         temperature=0.0,
         max_tokens=24000,
+        step="unify_profiles",
     )
 
 
@@ -154,6 +158,7 @@ def break_down_job_description(
         messages=build_job_description_breakdown_messages(job_input),
         temperature=0.0,
         max_tokens=3000,
+        step="job_description",
     )
 
 
@@ -175,6 +180,7 @@ def extract_company_intel(
         ),
         temperature=0.0,
         max_tokens=4000,
+        step="company_intel",
     )
 
 
@@ -194,6 +200,7 @@ def match_profile_to_job(
         ),
         temperature=0.0,
         max_tokens=24000,
+        step="match_analysis",
     )
 
 
@@ -210,6 +217,7 @@ def score_job_match(
         ),
         temperature=0.0,
         max_tokens=8000,
+        step="match_analysis",
     )
 
 
@@ -226,8 +234,9 @@ def generate_resume_actions(
             score,
             response_schema=ResumeActionsLLMResponse.model_json_schema(),
         ),
-        temperature=0.0,
-        max_tokens=8192,
+        temperature=0.3,
+        max_tokens=12000,
+        step="resume_actions",
     )
 
 
@@ -241,8 +250,9 @@ def plan_reachout_queries(
     return llm.complete(
         response_model=ReachoutQueryPlanLLMResponse,
         messages=build_query_planner_messages(reachout_input),
-        temperature=0.0,
+        temperature=0.4,
         max_tokens=2000,
+        step="reachout_query_plan",
     )
 
 
@@ -258,6 +268,7 @@ def validate_reachout_candidates(
         messages=build_candidate_validator_messages(reachout_input, search_plan, gated_results),
         temperature=0.0,
         max_tokens=4000,
+        step="reachout_validate",
     )
 
 
@@ -285,6 +296,7 @@ def analyze_jd_tone(
         ],
         temperature=0.3,
         max_tokens=1024,
+        step="cover_letter_jd_tone",
     )
 
 
@@ -315,6 +327,7 @@ def enhance_cover_letter_prompt(
         ],
         temperature=0.5,
         max_tokens=2048,
+        step="cover_letter_enhance_prompt",
     )
 
 
@@ -333,4 +346,5 @@ def write_cover_letter(
         ],
         temperature=MODE_TEMPERATURES[mode],
         max_tokens=4096,
+        step="cover_letter_write",
     )

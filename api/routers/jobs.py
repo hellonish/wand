@@ -4,14 +4,17 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
+import time
+from datetime import datetime, timedelta, timezone
 from typing import Any, List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile, BackgroundTasks, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile, BackgroundTasks
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from engine.joblens.company_intel import CompanyIntelInput, CompanyIntelService
+from engine.joblens.company_intel import CompanyIntelInput, CompanyIntelResult, CompanyIntelService
 from engine.joblens.job_description import JobDescriptionBreakdownResult, break_down_job_description
 from engine.joblens.job_match import JobMatchResult, match_profile_to_job
 from engine.joblens.job_match.models import JobMatchScore, ResumeActions
@@ -23,14 +26,11 @@ import engine.inference as inference
 from ..database import SessionLocal, get_db
 from ..auth import get_current_user
 from ..llm import get_llm
-from ..billing.gateway import MeterContext, metered, bg_settle_success, bg_settle_failure
-from engine.usage import UsageCollector
 from ..schemas import (
     JobCreate, JobTrackCreate, JobUpdate, JobResponse, JobListResponse, JobStatusEnum, JobLensSessionResponse,
 )
-from ..models import User, Job, JobLensSession, JobStatus, UserProfile, ProfileFile
+from ..models import User, Job, JobLensSession, JobStatus, UserProfile, ProfileFile, CompanyCache
 from ..websocket import manager
-from ..limiter import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -89,10 +89,7 @@ def _fallback_unified_profile(sources: dict[str, Any]) -> dict[str, Any]:
     return create_unified_profile(type_sources) if type_sources else next(iter(sources.values()))
 
 
-def _get_or_create_unified_profile(
-    user_id: str,
-    collector: Optional[UsageCollector] = None,
-) -> UnifiedProfile:
+def _get_or_create_unified_profile(user_id: str) -> UnifiedProfile:
     """Load the user's unified profile or create/cache it from parsed profile files."""
 
     db = SessionLocal()
@@ -119,7 +116,7 @@ def _get_or_create_unified_profile(
             }
             unified, _ = merge_profile_sources(
                 sources,
-                get_llm("profile", collector=collector),
+                get_llm("profile"),
                 global_context=profile.additional_context,
                 per_file_context=per_file_ctx,
             )
@@ -135,31 +132,112 @@ def _get_or_create_unified_profile(
         db.close()
 
 
+def _company_cache_key(company_name: str, website: Optional[str]) -> str:
+    if website:
+        try:
+            # Strip scheme, www, and path — keep bare domain as the key.
+            domain = re.sub(r"^https?://", "", website.strip().lower())
+            domain = re.sub(r"^www\.", "", domain)
+            domain = domain.split("/")[0].strip()
+            if domain:
+                return domain
+        except Exception:
+            pass
+    return re.sub(r"[^a-z0-9]+", "-", company_name.lower()).strip("-")
+
+
+def _reachout_roles_key(target_roles: list) -> str:
+    return hashlib.md5(",".join(sorted(r.lower() for r in target_roles if r)).encode()).hexdigest()
+
+
+def _get_company_cache(
+    company_key: str,
+    cache_type: str,
+    roles_key: Optional[str],
+    db: Session,
+) -> Optional[dict]:
+    now = datetime.now(timezone.utc)
+    q = (
+        db.query(CompanyCache)
+        .filter(
+            CompanyCache.company_key == company_key,
+            CompanyCache.cache_type == cache_type,
+            CompanyCache.expires_at > now,
+        )
+    )
+    if roles_key is not None:
+        q = q.filter(CompanyCache.roles_key == roles_key)
+    else:
+        q = q.filter(CompanyCache.roles_key.is_(None))
+    row = q.order_by(CompanyCache.created_at.desc()).first()
+    return row.data if row else None
+
+
+def _set_company_cache(
+    company_key: str,
+    cache_type: str,
+    data: dict,
+    ttl_days: int,
+    roles_key: Optional[str],
+    db: Session,
+) -> None:
+    # Delete any stale row for the same key before inserting so we never accumulate.
+    q = db.query(CompanyCache).filter(
+        CompanyCache.company_key == company_key,
+        CompanyCache.cache_type == cache_type,
+    )
+    if roles_key is not None:
+        q = q.filter(CompanyCache.roles_key == roles_key)
+    else:
+        q = q.filter(CompanyCache.roles_key.is_(None))
+    q.delete(synchronize_session=False)
+
+    expires_at = datetime.now(timezone.utc) + timedelta(days=ttl_days)
+    db.add(CompanyCache(
+        company_key=company_key,
+        cache_type=cache_type,
+        roles_key=roles_key,
+        data=data,
+        expires_at=expires_at,
+    ))
+    db.commit()
+
+
 def _gather_company_intel(
     job_description: JobDescriptionBreakdownResult,
     company_website: Optional[str],
-    collector: Optional[UsageCollector] = None,
-):
-    """Company intel section: derive lookup handles and collect company intelligence."""
+    db: Session,
+) -> tuple:
+    """Company intel section: derive lookup handles and collect company intelligence.
 
-    return CompanyIntelService(llm=get_llm("company_intel", collector=collector)).collect(
+    Returns (result, cache_hit: bool).
+    """
+    company_name = job_description.breakdown.metadata.company_name or ""
+    cache_key = _company_cache_key(company_name, company_website)
+    cached = _get_company_cache(cache_key, "intel", None, db)
+    if cached is not None:
+        logger.info("company_intel cache hit for key=%s", cache_key)
+        return CompanyIntelResult.model_validate(cached), True
+
+    result = CompanyIntelService(llm=get_llm("company_intel")).collect(
         CompanyIntelInput(
-            company_name=job_description.breakdown.metadata.company_name,
+            company_name=company_name,
             website=company_website,
         )
     )
+    try:
+        _set_company_cache(cache_key, "intel", result.model_dump(mode="json"), 14, None, db)
+    except Exception:
+        logger.warning("Failed to write company_intel cache for key=%s", cache_key)
+    return result, False
 
 
-def _score_match(
-    profile: Optional[UnifiedProfile],
-    job_description: JobDescriptionBreakdownResult,
-    collector: Optional[UsageCollector] = None,
-) -> JobMatchScore:
+def _score_match(profile: Optional[UnifiedProfile], job_description: JobDescriptionBreakdownResult) -> JobMatchScore:
     """Phase A — score + evidence, no resume actions."""
     if not profile:
         raise ValueError("No unified profile available.")
     from engine.joblens.job_match.models import JobMatchRequest
-    llm = get_llm("job_match", collector=collector)
+    llm = get_llm("job_match")
     request = JobMatchRequest(profile=profile, job_description=job_description)
     response = inference.score_job_match(llm, request)
     from engine.utils import dedupe_warning_strings
@@ -219,13 +297,12 @@ def _generate_actions(
     job_description: JobDescriptionBreakdownResult,
     score: JobMatchScore,
     resume_candidates=None,
-    collector: Optional[UsageCollector] = None,
 ) -> ResumeActions:
     """Phase B — resume actions grounded in Phase A score."""
     if not profile:
         raise ValueError("No unified profile available.")
     from engine.joblens.job_match.models import JobMatchRequest
-    llm = get_llm("job_match", collector=collector)
+    llm = get_llm("job_match")
     request = JobMatchRequest(
         profile=profile,
         job_description=job_description,
@@ -256,10 +333,12 @@ def _discover_reachout(
     profile: UnifiedProfile,
     job_description: JobDescriptionBreakdownResult,
     company_website: Optional[str],
-    collector: Optional[UsageCollector] = None,
-):
-    """Reachout section: derive roles/schools and discover candidate contacts."""
+    db: Session,
+) -> tuple:
+    """Reachout section: derive roles/schools and discover candidate contacts.
 
+    Returns (result, cache_hit: bool).
+    """
     breakdown = job_description.breakdown
     roles = [
         breakdown.metadata.job_title,
@@ -270,15 +349,29 @@ def _discover_reachout(
     target_roles = [role for role in roles if role]
     schools = [item.institution for item in profile.education if item.institution]
 
-    return ReachoutService(llm=get_llm("reachout", collector=collector)).discover(
+    company_name = breakdown.metadata.company_name or ""
+    cache_key = _company_cache_key(company_name, company_website)
+    rkey = _reachout_roles_key(target_roles)
+    cached = _get_company_cache(cache_key, "reachout", rkey, db)
+    if cached is not None:
+        from engine.joblens.reachout.models import ReachoutResult
+        logger.info("reachout cache hit for key=%s roles=%s", cache_key, rkey)
+        return ReachoutResult.model_validate(cached), True
+
+    result = ReachoutService(llm=get_llm("reachout")).discover(
         ReachoutInput(
-            company_name=breakdown.metadata.company_name,
+            company_name=company_name,
             company_website=company_website,
             target_roles=target_roles,
             location=breakdown.metadata.location,
             schools=schools,
         )
     )
+    try:
+        _set_company_cache(cache_key, "reachout", result.model_dump(mode="json"), 7, rkey, db)
+    except Exception:
+        logger.warning("Failed to write reachout cache for key=%s", cache_key)
+    return result, False
 
 
 def _job_posting_summary(job_description: JobDescriptionBreakdownResult) -> dict:
@@ -378,18 +471,9 @@ async def run_job_analysis_background(
     user_id: str,
     jd_text: str,
     company_website: Optional[str],
-    meter_ref: Optional[str] = None,
-    meter_tracker_keys: Optional[list] = None,
-    meter_charge: bool = True,
 ) -> None:
-    """Run the job analysis flow from profile + parsed job description.
+    """Run the job analysis flow from profile + parsed job description."""
 
-    meter_ref          — the reservation ref from the gateway (None = free/no-charge).
-    meter_tracker_keys — the rate-window keys that were incremented at reservation time,
-                         so we can roll them back on failure.
-    meter_charge       — False for retry-steps (no reservation was made).
-    """
-    collector = UsageCollector()
     profile_snapshot = None
     job_description = None
     company_intel = None
@@ -403,9 +487,7 @@ async def run_job_analysis_background(
         async def run_profile() -> None:
             nonlocal profile_snapshot
             try:
-                profile_snapshot = await asyncio.to_thread(
-                    lambda: _get_or_create_unified_profile(user_id, collector=collector)
-                )
+                profile_snapshot = await asyncio.to_thread(lambda: _get_or_create_unified_profile(user_id))
                 _emit(
                     user_id,
                     session_id,
@@ -439,10 +521,11 @@ async def run_job_analysis_background(
                             return JobDescriptionBreakdownResult.model_validate(cached.job_description)
                     return break_down_job_description(
                         job_text=jd_text,
-                        llm=get_llm("job_description", collector=collector),
+                        llm=get_llm("job_description"),
                         source_id=job_id,
                     )
 
+                _t0 = time.perf_counter()
                 job_description = await asyncio.to_thread(_load_or_call_llm)
                 _emit(
                     user_id,
@@ -450,7 +533,7 @@ async def run_job_analysis_background(
                     job_id,
                     "job_description",
                     "joblens_step_complete",
-                    {"data": job_description.model_dump(mode="json")},
+                    {"data": job_description.model_dump(mode="json"), "duration_ms": round((time.perf_counter() - _t0) * 1000, 1)},
                 )
             except Exception as error:
                 _emit(user_id, session_id, job_id, "job_description", "joblens_step_failed", {"error": str(error)})
@@ -488,6 +571,7 @@ async def run_job_analysis_background(
         async def run_parallel_section(step: str, fn):
             _emit(user_id, session_id, job_id, step, "joblens_step_started")
             try:
+                _t0 = time.perf_counter()
                 result = await asyncio.to_thread(fn)
                 _emit(
                     user_id,
@@ -495,7 +579,7 @@ async def run_job_analysis_background(
                     job_id,
                     step,
                     "joblens_step_complete",
-                    {"data": result.model_dump(mode="json")},
+                    {"data": result.model_dump(mode="json"), "duration_ms": round((time.perf_counter() - _t0) * 1000, 1)},
                 )
                 return result
             except Exception as error:
@@ -510,11 +594,13 @@ async def run_job_analysis_background(
         async def run_company_intel():
             _emit(user_id, session_id, job_id, "company_intel", "joblens_step_started")
             try:
-                result = await asyncio.to_thread(
-                    lambda: _gather_company_intel(job_description, company_website, collector=collector)
-                )
+                def _do_company_intel():
+                    with SessionLocal() as _db:
+                        return _gather_company_intel(job_description, company_website, _db)
+                _t0 = time.perf_counter()
+                result, hit = await asyncio.to_thread(_do_company_intel)
                 _emit(user_id, session_id, job_id, "company_intel", "joblens_step_complete",
-                      {"data": _slim_company_intel(result)})
+                      {"data": _slim_company_intel(result), "cache_hit": hit, "duration_ms": round((time.perf_counter() - _t0) * 1000, 1)})
                 return result
             except Exception as error:
                 _emit(user_id, session_id, job_id, "company_intel", "joblens_step_failed", {"error": str(error)})
@@ -523,14 +609,15 @@ async def run_job_analysis_background(
         async def run_reachout():
             _emit(user_id, session_id, job_id, "reachout", "joblens_step_started")
             try:
-                result = await asyncio.to_thread(
-                    lambda: _discover_reachout(
-                        profile_snapshot or UnifiedProfile(), job_description, company_website,
-                        collector=collector,
-                    )
-                )
+                def _do_reachout():
+                    with SessionLocal() as _db:
+                        return _discover_reachout(
+                            profile_snapshot or UnifiedProfile(), job_description, company_website, _db
+                        )
+                _t0 = time.perf_counter()
+                result, hit = await asyncio.to_thread(_do_reachout)
                 _emit(user_id, session_id, job_id, "reachout", "joblens_step_complete",
-                      {"data": _slim_reachout(result)})
+                      {"data": _slim_reachout(result), "cache_hit": hit, "duration_ms": round((time.perf_counter() - _t0) * 1000, 1)})
                 return result
             except Exception as error:
                 _emit(user_id, session_id, job_id, "reachout", "joblens_step_failed", {"error": str(error)})
@@ -540,7 +627,7 @@ async def run_job_analysis_background(
             run_company_intel(),
             run_parallel_section(
                 "match_analysis",
-                lambda: _score_match(profile_snapshot, job_description, collector=collector),
+                lambda: _score_match(profile_snapshot, job_description),
             ),
             run_reachout(),
         )
@@ -582,9 +669,7 @@ async def run_job_analysis_background(
             _cands = _wave3_candidates
             resume_actions = await run_parallel_section(
                 "resume_actions",
-                lambda: _generate_actions(
-                    profile_snapshot, job_description, match_score, _cands, collector=collector
-                ),
+                lambda: _generate_actions(profile_snapshot, job_description, match_score, _cands),
             )
 
         def save_third_wave(db: Session) -> None:
@@ -602,50 +687,10 @@ async def run_job_analysis_background(
                 job.status = JobStatus.TRACKED
 
         _db_write(save_third_wave)
-
-        # ── Billing: success settle ───────────────────────────────────────────
-        if meter_ref and meter_charge:
-            bg_settle_success(
-                user_id=user_id,
-                task_type="job_analysis",
-                ref=meter_ref,
-                credits_reserved=12,
-                collector=collector,
-            )
-        elif meter_ref:
-            # Free / retry path — still write usage event with credits_charged=0.
-            bg_settle_success(
-                user_id=user_id,
-                task_type="job_analysis",
-                ref=meter_ref,
-                credits_reserved=0,
-                collector=collector,
-            )
-
         _emit(user_id, session_id, job_id, "pipeline", "joblens_pipeline_complete")
 
     except Exception as error:
         logger.exception("Job analysis pipeline error for job %s: %s", job_id, error)
-
-        # ── Billing: failure — refund + roll back rate windows ────────────────
-        if meter_ref and meter_charge:
-            bg_settle_failure(
-                user_id=user_id,
-                task_type="job_analysis",
-                ref=meter_ref,
-                tracker_keys=meter_tracker_keys or [],
-                collector=collector,
-            )
-        elif meter_ref:
-            # Free path — just write the failed usage event (no refund).
-            bg_settle_success(
-                user_id=user_id,
-                task_type="job_analysis",
-                ref=meter_ref,
-                credits_reserved=0,
-                collector=collector,
-            )
-
         def mark_job_tracked(db: Session) -> None:
             job = db.query(Job).filter(Job.id == job_id).first()
             if job and job.status == JobStatus.ANALYZING:
@@ -660,11 +705,8 @@ async def retry_steps_background(
     session_id: str,
     user_id: str,
     steps: List[str],
-    meter_ref: Optional[str] = None,
 ) -> None:
     """Re-run only the specified failed steps using existing session data."""
-
-    collector = UsageCollector()
 
     # Load what we need from the session
     db = SessionLocal()
@@ -708,24 +750,6 @@ async def retry_steps_background(
               {"error": "No job description in session — run full analysis first."})
         return
 
-    _STEP_SERIALIZERS = {
-        "company_intel": _slim_company_intel,
-        "reachout": _slim_reachout,
-    }
-
-    async def run_step(step: str, fn):
-        _emit(user_id, session_id, job_id, step, "joblens_step_started")
-        try:
-            result = await asyncio.to_thread(fn)
-            serialize = _STEP_SERIALIZERS.get(step, lambda r: r.model_dump(mode="json"))
-            _emit(user_id, session_id, job_id, step, "joblens_step_complete",
-                  {"data": serialize(result)})
-            return result
-        except Exception as error:
-            logger.exception("Retry step %s failed for job %s: %s", step, job_id, error)
-            _emit(user_id, session_id, job_id, step, "joblens_step_failed", {"error": str(error)})
-            return None
-
     results: dict = {}
 
     # Independent steps (can run in parallel)
@@ -733,21 +757,34 @@ async def retry_steps_background(
     needs_resume_actions = "resume_actions" in steps
 
     async def maybe_run(step: str):
-        if step == "company_intel":
-            results["company_intel"] = await run_step(
-                step, lambda: _gather_company_intel(job_description, company_website, collector=collector)
-            )
-        elif step == "reachout":
-            results["reachout"] = await run_step(
-                step, lambda: _discover_reachout(
-                    profile_snapshot or UnifiedProfile(), job_description, company_website,
-                    collector=collector,
-                )
-            )
-        elif step == "match_analysis":
-            results["match_analysis"] = await run_step(
-                step, lambda: _score_match(profile_snapshot, job_description, collector=collector)
-            )
+        _emit(user_id, session_id, job_id, step, "joblens_step_started")
+        try:
+            if step == "company_intel":
+                def _do_intel():
+                    with SessionLocal() as _db:
+                        return _gather_company_intel(job_description, company_website, _db)
+                result, hit = await asyncio.to_thread(_do_intel)
+                _emit(user_id, session_id, job_id, step, "joblens_step_complete",
+                      {"data": _slim_company_intel(result), "cache_hit": hit})
+                results["company_intel"] = result
+            elif step == "reachout":
+                def _do_reachout():
+                    with SessionLocal() as _db:
+                        return _discover_reachout(
+                            profile_snapshot or UnifiedProfile(), job_description, company_website, _db
+                        )
+                result, hit = await asyncio.to_thread(_do_reachout)
+                _emit(user_id, session_id, job_id, step, "joblens_step_complete",
+                      {"data": _slim_reachout(result), "cache_hit": hit})
+                results["reachout"] = result
+            elif step == "match_analysis":
+                result = await asyncio.to_thread(lambda: _score_match(profile_snapshot, job_description))
+                _emit(user_id, session_id, job_id, step, "joblens_step_complete",
+                      {"data": result.model_dump(mode="json")})
+                results["match_analysis"] = result
+        except Exception as error:
+            logger.exception("Retry step %s failed for job %s: %s", step, job_id, error)
+            _emit(user_id, session_id, job_id, step, "joblens_step_failed", {"error": str(error)})
 
     await asyncio.gather(*[maybe_run(s) for s in independent])
 
@@ -769,12 +806,17 @@ async def retry_steps_background(
             results["_resume_actions_skipped"] = True
         elif score_for_actions and profile_snapshot:
             _rcands = _retry_candidates
-            results["resume_actions"] = await run_step(
-                "resume_actions",
-                lambda: _generate_actions(
-                    profile_snapshot, job_description, score_for_actions, _rcands, collector=collector
+            _emit(user_id, session_id, job_id, "resume_actions", "joblens_step_started")
+            try:
+                results["resume_actions"] = await asyncio.to_thread(
+                    lambda: _generate_actions(profile_snapshot, job_description, score_for_actions, _rcands)
                 )
-            )
+                _emit(user_id, session_id, job_id, "resume_actions", "joblens_step_complete",
+                      {"data": results["resume_actions"].model_dump(mode="json")})
+            except Exception as _ra_err:
+                logger.exception("Retry step resume_actions failed for job %s: %s", job_id, _ra_err)
+                _emit(user_id, session_id, job_id, "resume_actions", "joblens_step_failed",
+                      {"error": str(_ra_err)})
         else:
             _emit(user_id, session_id, job_id, "resume_actions", "joblens_step_failed",
                   {"error": "Cannot generate resume actions without a match score."})
@@ -799,17 +841,6 @@ async def retry_steps_background(
             row.current_step = max(row.current_step, 6)
 
     _db_write(save_retry)
-
-    # Billing: retry is free — write usage event only for analytics.
-    if meter_ref:
-        bg_settle_success(
-            user_id=user_id,
-            task_type="job_analysis_retry",
-            ref=meter_ref,
-            credits_reserved=0,
-            collector=collector,
-        )
-
     _emit(user_id, session_id, job_id, "pipeline", "joblens_pipeline_complete")
 
 
@@ -844,20 +875,18 @@ def _check_profile_documents(user_id: str, db: Session) -> None:
 
 
 @router.post("", response_model=JobResponse)
-@limiter.limit("10/minute")
 async def create_job(
-    request: Request,
     job_data: JobCreate,
     background_tasks: BackgroundTasks,
-    ctx: MeterContext = Depends(metered("job_analysis", charge=True)),
-    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    """Create a new job and kick off the analysis pipeline (costs 12 credits)."""
-    _check_profile_documents(ctx.user_id, db)
+    """Create a new job and kick off the analysis pipeline."""
+    _check_profile_documents(current_user.id, db)
 
     # Create placeholder job
     job = Job(
-        user_id=ctx.user_id,
+        user_id=current_user.id,
         job_posting={
             "job_title": "Analyzing...",
             "company_name": "Pending",
@@ -871,7 +900,7 @@ async def create_job(
 
     # Create internal analysis session
     session = JobLensSession(
-        user_id=ctx.user_id,
+        user_id=current_user.id,
         job_id=job.id,
         raw_jd_text=job_data.jd_text,
         company_website=job_data.company_website,
@@ -883,15 +912,11 @@ async def create_job(
     db.commit()
     db.refresh(job)
 
-    # Pass billing context into the background task.
-    # The task owns settle_success / settle_failure from this point forward.
+    # Kick off pipeline in background
     background_tasks.add_task(
         run_job_analysis_background,
-        job.id, session.id, ctx.user_id,
+        job.id, session.id, current_user.id,
         job_data.jd_text, job_data.company_website,
-        meter_ref=ctx.ref,
-        meter_tracker_keys=list(ctx._tracker._incremented),
-        meter_charge=ctx.charge,
     )
 
     return job
@@ -1039,23 +1064,21 @@ async def delete_job(
 
 
 @router.post("/{job_id}/analyze", response_model=JobResponse)
-@limiter.limit("5/minute")
 async def analyze_job(
-    request: Request,
     job_id: UUID,
     background_tasks: BackgroundTasks,
-    ctx: MeterContext = Depends(metered("job_analysis", charge=True)),
-    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
-    """(Re-)run the JobLens analysis pipeline for an existing tracked job (costs 12 credits)."""
+    """(Re-)run the JobLens analysis pipeline for an existing tracked job."""
     job = db.query(Job).filter(
         Job.id == str(job_id),
-        Job.user_id == ctx.user_id,
+        Job.user_id == current_user.id,
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    _check_profile_documents(ctx.user_id, db)
+    _check_profile_documents(current_user.id, db)
 
     # Get or create a JobLens session
     session = None
@@ -1065,7 +1088,7 @@ async def analyze_job(
     if not session:
         raw_jd = (job.job_posting or {}).get("raw_jd", "") or ""
         session = JobLensSession(
-            user_id=ctx.user_id,
+            user_id=current_user.id,
             job_id=job.id,
             raw_jd_text=raw_jd,
             company_website=job.company_website,
@@ -1082,11 +1105,8 @@ async def analyze_job(
 
     background_tasks.add_task(
         run_job_analysis_background,
-        job.id, session.id, ctx.user_id,
+        job.id, session.id, current_user.id,
         jd_text, job.company_website,
-        meter_ref=ctx.ref,
-        meter_tracker_keys=list(ctx._tracker._incremented),
-        meter_charge=ctx.charge,
     )
 
     return job
@@ -1097,16 +1117,14 @@ class RetryStepsRequest(BaseModel):
 
 
 @router.post("/{job_id}/retry-steps", response_model=JobLensSessionResponse)
-@limiter.limit("5/minute")
 async def retry_steps(
-    request: Request,
     job_id: UUID,
     body: RetryStepsRequest,
     background_tasks: BackgroundTasks,
-    ctx: MeterContext = Depends(metered("job_analysis_retry", charge=False)),
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Re-run only specific failed steps (free — already paid at initial analysis)."""
+    """Re-run only specific failed steps for an existing job analysis session."""
     VALID_STEPS = {"company_intel", "match_analysis", "resume_actions", "reachout"}
     requested = [s for s in body.steps if s in VALID_STEPS]
     if not requested:
@@ -1114,7 +1132,7 @@ async def retry_steps(
 
     job = db.query(Job).filter(
         Job.id == str(job_id),
-        Job.user_id == ctx.user_id,
+        Job.user_id == current_user.id,
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -1130,8 +1148,7 @@ async def retry_steps(
 
     background_tasks.add_task(
         retry_steps_background,
-        job.id, session.id, ctx.user_id, requested,
-        meter_ref=ctx.ref,
+        job.id, session.id, current_user.id, requested,
     )
 
     return session
@@ -1161,9 +1178,7 @@ async def track_job(
 
 
 @router.post("/{job_id}/parse-resume")
-@limiter.limit("10/minute")
 async def parse_resume_for_job(
-    request: Request,
     job_id: UUID,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),

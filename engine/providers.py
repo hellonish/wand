@@ -18,43 +18,31 @@ DeepSeekClient — plain OpenAI SDK + response_format={"type":"json_object"}.
 
 import json
 import os
+import random
 import re
+import sys
+import time
 from typing import Any, Dict, List, Optional, Type
 
 import instructor
+import openai
+import requests
 from dotenv import load_dotenv
 from openai import OpenAI
 
 from engine.usage import Usage, UsageCollector
 
 
-# ─── Input-size guard ─────────────────────────────────────────────────────────
-# Bounds worst-case spend per LLM call. Input tokens are billed (Grok-3 in =
-# $3/1M) and a single task can chain several calls, so an unbounded prompt is a
-# cost-amplification vector (e.g. pasting a multi-MB JD, or 12 large profile
-# files). We approximate tokens as chars/4 and reject prompts over the ceiling
-# BEFORE hitting the provider. Tune via LLM_MAX_INPUT_CHARS (default ~300k chars
-# ≈ 75k tokens ≈ $0.22 of Grok-3 input — generous for any real document set).
-_MAX_INPUT_CHARS = int(os.getenv("LLM_MAX_INPUT_CHARS", "300000"))
+# ─── Debug capture ────────────────────────────────────────────────────────────
 
-
-class InputTooLarge(ValueError):
-    """Raised when an LLM prompt exceeds the configured input ceiling."""
-
-    def __init__(self, chars: int, limit: int):
-        self.chars = chars
-        self.limit = limit
-        super().__init__(
-            f"LLM input too large: {chars} chars exceeds limit of {limit}. "
-            "Reduce the size of the job description or profile documents."
-        )
-
-
-def _guard_input_size(messages: List[Dict[str, str]]) -> None:
-    """Reject oversized prompts before they reach the provider (cost guard)."""
-    total = sum(len(m.get("content", "") or "") for m in messages)
-    if total > _MAX_INPUT_CHARS:
-        raise InputTooLarge(total, _MAX_INPUT_CHARS)
+def _debug_capture(step: str, messages: List[Dict], raw_response: Any) -> None:
+    log_path = os.getenv("LLM_DEBUG_LOG", "llm_debug.jsonl")
+    entry = {"step": step, "ts": time.time(), "messages": messages, "response": raw_response}
+    try:
+        with open(log_path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, default=str) + "\n")
+    except Exception as exc:
+        print(f"[LLM_DEBUG_CAPTURE] write failed: {exc}", file=sys.stderr)
 
 
 # ─── Shared helpers ───────────────────────────────────────────────────────────
@@ -81,6 +69,22 @@ def _ensure_json_word(messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
     return messages
 
 
+def _strip_schema_verbose_keys(schema: Any, top_level: bool = True) -> Any:
+    """Recursively remove description and nested title keys to slim token usage."""
+    if isinstance(schema, dict):
+        result = {}
+        for k, v in schema.items():
+            if k == "description":
+                continue
+            if k == "title" and not top_level:
+                continue
+            result[k] = _strip_schema_verbose_keys(v, top_level=False)
+        return result
+    if isinstance(schema, list):
+        return [_strip_schema_verbose_keys(item, top_level=False) for item in schema]
+    return schema
+
+
 def _inject_response_schema(
     messages: List[Dict[str, str]], response_model: Type[Any]
 ) -> List[Dict[str, str]]:
@@ -97,12 +101,12 @@ def _inject_response_schema(
     model_schema = response_model.model_json_schema()
     model_title = model_schema.get("title", "")
 
-    # Check if the schema is already present — avoid double injection
     for msg in messages:
         if msg.get("role") == "system" and model_title and model_title in msg.get("content", ""):
             return messages
 
-    schema = json.dumps(model_schema, indent=2)
+    slimmed_schema = _strip_schema_verbose_keys(model_schema, top_level=True)
+    schema = json.dumps(slimmed_schema, indent=2)
     schema_block = (
         "\n\n---\nYou MUST return a single JSON object that exactly matches "
         "the following JSON Schema. Do not add, remove, or rename top-level keys.\n\n"
@@ -113,9 +117,40 @@ def _inject_response_schema(
         if msg.get("role") == "system":
             messages[i] = {**msg, "content": msg["content"] + schema_block}
             return messages
-    # No system message — prepend one
     messages.insert(0, {"role": "system", "content": "Respond with JSON." + schema_block})
     return messages
+
+
+def _is_transient_error(exc: BaseException) -> bool:
+    """Return True for errors that are safe to retry (rate limits, 5xx, timeouts)."""
+    if isinstance(exc, (openai.RateLimitError, openai.InternalServerError, openai.APITimeoutError)):
+        return True
+    if isinstance(exc, openai.APIStatusError) and exc.status_code >= 500:
+        return True
+    if isinstance(exc, requests.exceptions.Timeout):
+        return True
+    return False
+
+
+def _retry_call(fn, max_attempts: int = 3):
+    """Call fn() with exponential backoff on transient errors.
+
+    Delays: 1s, 2s, 4s with ±20% jitter. Non-transient errors are re-raised
+    immediately without consuming remaining attempts.
+    """
+    last_exc: Optional[BaseException] = None
+    for attempt in range(max_attempts):
+        try:
+            return fn()
+        except BaseException as exc:
+            if not _is_transient_error(exc):
+                raise
+            last_exc = exc
+            if attempt < max_attempts - 1:
+                base_delay = 2 ** attempt
+                jitter = base_delay * 0.2 * (random.random() * 2 - 1)
+                time.sleep(base_delay + jitter)
+    raise last_exc
 
 
 # ─── XAI (Grok) — instructor path ────────────────────────────────────────────
@@ -128,7 +163,7 @@ class XAIClient:
     _MODEL_ENV = "XAI_MODEL"
     _DEFAULT_MODEL = "grok-3"
     _DEFAULT_MAX_TOKENS = 24000
-    max_output_tokens = 32768   # Grok-3 supports large outputs — single-call path
+    max_output_tokens = 32768
 
     def __init__(self, model: Optional[str] = None, api_key: Optional[str] = None):
         load_dotenv()
@@ -140,7 +175,6 @@ class XAIClient:
             OpenAI(base_url=self._BASE_URL, api_key=key, timeout=120.0),
             mode=instructor.Mode.JSON,
         )
-        # Attached by api/llm.get_llm(collector=...). None = no tracking.
         self.collector: Optional[UsageCollector] = None
 
     def complete(
@@ -150,28 +184,40 @@ class XAIClient:
         temperature: float = 0.0,
         max_tokens: Optional[int] = None,
         max_retries: int = 2,
+        step: str = "",
     ) -> Any:
-        _guard_input_size(messages)
-        # create_with_completion returns (parsed_model, raw_completion).
-        # raw_completion.usage carries prompt_tokens / completion_tokens.
-        result, completion = self._client.chat.completions.create_with_completion(
-            model=self.model,
-            response_model=response_model,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens or self._DEFAULT_MAX_TOKENS,
-            max_retries=max_retries,
-            strict=False,
-        )
+        t0 = time.perf_counter()
+
+        def _call():
+            return self._client.chat.completions.create_with_completion(
+                model=self.model,
+                response_model=response_model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens or self._DEFAULT_MAX_TOKENS,
+                max_retries=max_retries,
+                strict=False,
+            )
+
+        result, raw_completion = _retry_call(_call)
+        duration_ms = (time.perf_counter() - t0) * 1000
+
         if self.collector is not None:
-            usage = getattr(completion, "usage", None)
-            if usage is not None:
-                self.collector.add(Usage(
-                    input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-                    output_tokens=getattr(usage, "completion_tokens", 0) or 0,
-                    provider="grok",
-                    model=self.model,
-                ))
+            usage_data = getattr(raw_completion, "usage", None)
+            in_tok = getattr(usage_data, "prompt_tokens", 0) or 0
+            out_tok = getattr(usage_data, "completion_tokens", 0) or 0
+            u = Usage(input_tokens=in_tok, output_tokens=out_tok, provider="grok", model=self.model)
+            self.collector.add(u)
+            if step:
+                self.collector.record_step(step, duration_ms, u)
+
+        if os.getenv("LLM_DEBUG_CAPTURE"):
+            try:
+                raw_dict = raw_completion.model_dump() if hasattr(raw_completion, "model_dump") else str(raw_completion)
+            except Exception:
+                raw_dict = str(raw_completion)
+            _debug_capture(step, messages, raw_dict)
+
         return result
 
 
@@ -192,9 +238,9 @@ class DeepSeekClient:
     _API_KEY_ENV = "DEEPSEEK_API_KEY"
     _MODEL_ENV = "DEEPSEEK_MODEL"
     _DEFAULT_MODEL = "deepseek-chat"
-    _DEFAULT_MAX_TOKENS = 4096  # 8192 was too aggressive; retries * 8k = quota death
-    _MAX_OUTPUT_TOKENS = 8192   # deepseek-chat hard cap — exceeding this returns HTTP 400
-    max_output_tokens = 8192    # capability flag — callers use this to pick single vs two-phase
+    _DEFAULT_MAX_TOKENS = 4096
+    _MAX_OUTPUT_TOKENS = 8192
+    max_output_tokens = 8192
 
     def __init__(self, model: Optional[str] = None, api_key: Optional[str] = None):
         load_dotenv()
@@ -202,9 +248,7 @@ class DeepSeekClient:
         if not key:
             raise ValueError(f"{self._API_KEY_ENV} is required in .env or the environment.")
         self.model = model or os.getenv(self._MODEL_ENV) or self._DEFAULT_MODEL
-        # Plain OpenAI client — no instructor wrapper
         self._client = OpenAI(base_url=self._BASE_URL, api_key=key, timeout=120.0)
-        # Attached by api/llm.get_llm(collector=...). None = no tracking.
         self.collector: Optional[UsageCollector] = None
 
     def complete(
@@ -213,33 +257,40 @@ class DeepSeekClient:
         messages: List[Dict[str, str]],
         temperature: float = 0.0,
         max_tokens: Optional[int] = None,
-        max_retries: int = 0,  # no silent retries — fail fast and surface the error
+        max_retries: int = 0,
+        step: str = "",
     ) -> Any:
-        _guard_input_size(messages)
-        # Inject the response model's JSON schema so DeepSeek knows the exact
-        # wrapper structure. Without this, it returns inner-model fields flat
-        # at the root level instead of the expected {"field": ..., ...} wrapper.
         messages = _inject_response_schema(messages, response_model)
-        # DeepSeek also requires the literal word "json" somewhere in the prompt.
         messages = _ensure_json_word(messages)
+        max_tok = min(max_tokens or self._DEFAULT_MAX_TOKENS, self._MAX_OUTPUT_TOKENS)
 
-        response = self._client.chat.completions.create(
-            model=self.model,
-            messages=messages,
-            response_format={"type": "json_object"},
-            temperature=temperature,
-            max_tokens=min(max_tokens or self._DEFAULT_MAX_TOKENS, self._MAX_OUTPUT_TOKENS),
-        )
-        if self.collector is not None:
-            usage = getattr(response, "usage", None)
-            if usage is not None:
-                self.collector.add(Usage(
-                    input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-                    output_tokens=getattr(usage, "completion_tokens", 0) or 0,
-                    provider="deepseek",
-                    model=self.model,
-                ))
+        t0 = time.perf_counter()
+
+        def _call():
+            return self._client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                response_format={"type": "json_object"},
+                temperature=temperature,
+                max_tokens=max_tok,
+            )
+
+        response = _retry_call(_call)
+        duration_ms = (time.perf_counter() - t0) * 1000
         content = response.choices[0].message.content or ""
+
+        if self.collector is not None:
+            usage_data = getattr(response, "usage", None)
+            in_tok = getattr(usage_data, "prompt_tokens", 0) or 0
+            out_tok = getattr(usage_data, "completion_tokens", 0) or 0
+            u = Usage(input_tokens=in_tok, output_tokens=out_tok, provider="deepseek", model=self.model)
+            self.collector.add(u)
+            if step:
+                self.collector.record_step(step, duration_ms, u)
+
+        if os.getenv("LLM_DEBUG_CAPTURE"):
+            _debug_capture(step, messages, content)
+
         content = _extract_json(content)
         return response_model.model_validate_json(content)
 

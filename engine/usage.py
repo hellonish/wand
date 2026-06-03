@@ -32,13 +32,34 @@ class Usage:
 
 
 @dataclass
+class StepTrace:
+    """Wall-clock latency and token counts for a single named pipeline step."""
+
+    step: str
+    duration_ms: float
+    input_tokens: int
+    output_tokens: int
+
+
+@dataclass
 class UsageCollector:
     """Accumulates Usage items across all complete() calls within one task."""
 
     items: list[Usage] = field(default_factory=list)
+    traces: list[StepTrace] = field(default_factory=list)
 
     def add(self, u: Usage) -> None:
         self.items.append(u)
+
+    def record_step(self, step: str, duration_ms: float, usage: Usage) -> None:
+        self.traces.append(
+            StepTrace(
+                step=step,
+                duration_ms=duration_ms,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+            )
+        )
 
     @property
     def input_tokens(self) -> int:

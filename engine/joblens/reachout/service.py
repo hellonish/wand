@@ -136,7 +136,8 @@ class ReachoutService:
         queries = list(plan.queries)
         country = reachout_input.job_location_country or reachout_input.location
         role_terms = reachout_input.target_roles or ["software engineer"]
-        next_priority = max((query.priority for query in queries), default=0) + 1
+        # Alumni queries are deterministic and high-signal; assign priority 1 so they run first.
+        next_priority = 1
         added_deterministic_queries = False
 
         for school in reachout_input.schools:
@@ -151,11 +152,11 @@ class ReachoutService:
                         query=base_query,
                         target_persona=ReachoutPersona.SCHOOL_ALUMNI,
                         intent=f"Find {school} alumni working at {company} in the target job country.",
-                        priority=min(next_priority, 5),
+                        priority=next_priority,
                     )
                 )
                 added_deterministic_queries = True
-                next_priority += 1
+                next_priority = min(next_priority + 1, 5)
 
             for role in role_terms[:2]:
                 role_parts = [f'site:linkedin.com/in "{company}"', f'"{school}"', f'"{role}"']
@@ -170,11 +171,11 @@ class ReachoutService:
                         query=role_query,
                         target_persona=ReachoutPersona.SCHOOL_ALUMNI,
                         intent=f"Find {school} alumni at {company} connected to {role} roles in the target job country.",
-                        priority=min(next_priority, 5),
+                        priority=next_priority,
                     )
                 )
                 added_deterministic_queries = True
-                next_priority += 1
+                next_priority = min(next_priority + 1, 5)
 
         if not added_deterministic_queries:
             return plan
@@ -364,7 +365,23 @@ def _linkedin_search_urls_from_plan(
 
     urls: List[str] = []
     seen: set[str] = set()
+    company = search_plan.company_name or reachout_input.company_name
 
+    # Broad company people search is the anchor fallback.
+    if company:
+        broad_url = f"https://www.linkedin.com/search/results/people/?keywords={quote_plus(company)}"
+        seen.add(broad_url)
+        urls.append(broad_url)
+
+        # Company page /people/ tab lets users browse all employees directly.
+        slug = _company_name_to_slug(company)
+        if slug:
+            people_url = f"https://www.linkedin.com/company/{slug}/people/"
+            if people_url not in seen:
+                seen.add(people_url)
+                urls.append(people_url)
+
+    # Per-query keyword searches from the plan.
     for sq in search_plan.queries[:8]:
         keywords = _query_to_linkedin_keywords(sq.query)
         if not keywords:
@@ -374,14 +391,52 @@ def _linkedin_search_urls_from_plan(
             seen.add(url)
             urls.append(url)
 
-    # Always include a broad company people search as the first fallback.
-    company = search_plan.company_name or reachout_input.company_name
+    # Per (company, role) pairs: filtered people search with currentCompany param.
+    seen_pairs: set[tuple[str, str]] = set()
     if company:
-        broad_url = f"https://www.linkedin.com/search/results/people/?keywords={quote_plus(company)}"
-        if broad_url not in seen:
-            urls.insert(0, broad_url)
+        for sq in search_plan.queries:
+            role = _extract_role_from_query(sq.query)
+            if not role:
+                continue
+            pair = (company.lower(), role.lower())
+            if pair in seen_pairs:
+                continue
+            seen_pairs.add(pair)
+            role_url = (
+                f"https://www.linkedin.com/search/results/people/"
+                f"?keywords={quote_plus(role)}&company={quote_plus(company)}"
+            )
+            if role_url not in seen:
+                seen.add(role_url)
+                urls.append(role_url)
 
-    return urls[:6]
+    return urls[:8]
+
+
+def _company_name_to_slug(company: str) -> str:
+    """Convert a company name to a best-effort LinkedIn company page slug."""
+
+    slug = company.lower()
+    slug = re.sub(r"[^a-z0-9\s-]", "", slug)
+    slug = re.sub(r"\s+", "-", slug.strip())
+    slug = re.sub(r"-+", "-", slug).strip("-")
+    return slug
+
+
+def _extract_role_from_query(query: str) -> str:
+    """Extract the first quoted non-company, non-location phrase that looks like a role title."""
+
+    phrases = re.findall(r'"([^"]+)"', query)
+    role_indicators = (
+        "engineer", "manager", "recruiter", "talent", "lead", "director",
+        "vp", "cto", "developer", "architect", "scientist", "analyst",
+        "acquisition", "founder", "head of",
+    )
+    for phrase in phrases:
+        lower = phrase.lower()
+        if any(ind in lower for ind in role_indicators):
+            return phrase
+    return ""
 
 
 def _query_to_linkedin_keywords(query: str) -> str:

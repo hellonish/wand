@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useStore } from '@/utils/store';
 import {
     api,
-    isApiError,
     Job,
     JobLensSession,
     type CompanyIntelResult,
@@ -1358,6 +1357,7 @@ function highlightLine(
     actions: ActionItem[],
     activeIdx: number | null,
     allActions: ActionItem[],
+    matchedIndices?: Set<number>,
 ): React.ReactNode {
     if (!text) return text;
     const { norm, map } = normalizeForMatch(text);
@@ -1371,7 +1371,9 @@ function highlightLine(
         if (pos === -1) continue;
         const start = map[pos];
         const end = map[pos + needle.length - 1] + 1;
-        matches.push({ start, end, action, idx: allActions.indexOf(action) });
+        const idx = allActions.indexOf(action);
+        if (matchedIndices) matchedIndices.add(idx);
+        matches.push({ start, end, action, idx });
     }
 
     if (matches.length === 0) return text;
@@ -1415,11 +1417,12 @@ function highlightLine(
     return <>{nodes}</>;
 }
 
-function ResumeDocument({ text, filename, allActions, activeIdx }: {
+function ResumeDocument({ text, filename, allActions, activeIdx, matchedIndices }: {
     text: string;
     filename?: string | null;
     allActions: ActionItem[];
     activeIdx: number | null;
+    matchedIndices?: Set<number>;
 }) {
     const lines = useMemo(() => assembleLines(text), [text]);
 
@@ -1434,7 +1437,6 @@ function ResumeDocument({ text, filename, allActions, activeIdx }: {
             {lines.map((line, i) => {
                 if (!line) return <div key={i} style={{ height: 9 }} />;
 
-                // Section header
                 if (isMainSection(line)) {
                     const label = line.replace(/:$/, '');
                     return (
@@ -1447,20 +1449,18 @@ function ResumeDocument({ text, filename, allActions, activeIdx }: {
                     );
                 }
 
-                // Bullet
                 if (isBullet(line)) {
                     const bulletText = prettify(line.replace(BULLET_RE, ''));
                     return (
                         <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'flex-start' }}>
                             <span style={{ color: 'var(--accent)', fontSize: 15, lineHeight: '1.5', flexShrink: 0, opacity: 0.65, userSelect: 'none' }}>•</span>
                             <div style={{ fontSize: 12.5, color: '#374151', lineHeight: 1.65 }}>
-                                {highlightLine(bulletText, allActions, activeIdx, allActions)}
+                                {highlightLine(bulletText, allActions, activeIdx, allActions, matchedIndices)}
                             </div>
                         </div>
                     );
                 }
 
-                // Date range
                 if (isDateLine(line)) {
                     return (
                         <div key={i} style={{ fontSize: 11, color: '#9ca3af', marginBottom: 6, marginTop: -2, letterSpacing: '0.01em' }}>
@@ -1469,13 +1469,12 @@ function ResumeDocument({ text, filename, allActions, activeIdx }: {
                     );
                 }
 
-                // Title / role / subheader vs. body text
                 const prev = i > 0 ? lines[i - 1] : '';
                 const isTitle = prev === '' || isMainSection(prev);
                 const display = prettify(line);
                 return (
                     <div key={i} style={{ fontSize: isTitle ? 13 : 12.5, fontWeight: isTitle ? 600 : 400, color: isTitle ? '#111827' : '#374151', lineHeight: 1.6, marginBottom: 3 }}>
-                        {highlightLine(display, allActions, activeIdx, allActions)}
+                        {highlightLine(display, allActions, activeIdx, allActions, matchedIndices)}
                     </div>
                 );
             })}
@@ -1508,6 +1507,67 @@ function ResumeMappingView({ actions, profile }: {
         projects: experienceRef,
     };
 
+    const _rawUpdates = (actions.update_actions as ActionItem[] | undefined) ?? [];
+    const _rawReplaces = (actions.replace_actions as ActionItem[] | undefined) ?? [];
+    const _rawDeletes = (actions.delete_actions as ActionItem[] | undefined) ?? [];
+    const _rawSelected = (actions.selected_actions as ActionItem[] | undefined) ?? [];
+    const _priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+    const _seen = new Set<string>();
+    const _unionActions: ActionItem[] = [];
+    for (const a of [..._rawUpdates, ..._rawReplaces, ..._rawDeletes]) {
+        const key = (a.target_text ?? '') + a.action_type;
+        if (_seen.has(key)) continue;
+        _seen.add(key);
+        _unionActions.push(a);
+    }
+    const _selectedKeys = new Set<string>(_rawSelected.map(a => (a.target_text ?? '') + a.action_type));
+    const _topActions: ActionItem[] = _rawSelected.filter(a => _selectedKeys.has((a.target_text ?? '') + a.action_type));
+    _topActions.sort((a, b) => (_priorityOrder[a.priority] ?? 3) - (_priorityOrder[b.priority] ?? 3));
+    const _otherActions: ActionItem[] = _unionActions.filter(a => !_selectedKeys.has((a.target_text ?? '') + a.action_type));
+    _otherActions.sort((a, b) => (_priorityOrder[a.priority] ?? 3) - (_priorityOrder[b.priority] ?? 3));
+    const _allActionsForMemo: ActionItem[] = [..._topActions, ..._otherActions];
+    const _selectedResumeTextForMemo = actions.selected_resume_text as string | null | undefined;
+
+    const _matchedIndices = useMemo<Set<number>>(() => {
+        const result = new Set<number>();
+
+        function scanText(text: string) {
+            const { norm, map } = normalizeForMatch(text);
+            for (let idx = 0; idx < _allActionsForMemo.length; idx++) {
+                const action = _allActionsForMemo[idx];
+                if (!action.target_text) continue;
+                const needle = normalizeNeedle(action.target_text);
+                if (needle.length < 3) continue;
+                const pos = norm.indexOf(needle);
+                if (pos !== -1) {
+                    const _s = map[pos];
+                    const _e = map[pos + needle.length - 1] + 1;
+                    if (_s !== undefined && _e !== undefined) result.add(idx);
+                }
+            }
+        }
+
+        if (_selectedResumeTextForMemo) {
+            const resumeLines = assembleLines(_selectedResumeTextForMemo);
+            for (const line of resumeLines) {
+                if (!line) continue;
+                scanText(prettify(isBullet(line) ? line.replace(BULLET_RE, '') : line));
+            }
+        } else if (profile) {
+            if (profile.basics?.summary) scanText(profile.basics.summary);
+            for (const exp of profile.work_experience ?? []) {
+                for (const line of [...(exp.description ?? []), ...(exp.achievements ?? [])]) {
+                    scanText(line);
+                }
+            }
+            for (const skill of profile.skills ?? []) {
+                scanText(skill);
+            }
+        }
+
+        return result;
+    }, [_selectedResumeTextForMemo, _allActionsForMemo, profile]);
+
     if (actions._skipped) {
         return (
             <div style={{ padding: '24px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, textAlign: 'center' }}>
@@ -1534,20 +1594,11 @@ function ResumeMappingView({ actions, profile }: {
         );
     }
 
-    const rawUpdates = (actions.update_actions as ActionItem[] | undefined) ?? [];
-    const rawReplaces = (actions.replace_actions as ActionItem[] | undefined) ?? [];
-    const rawDeletes = (actions.delete_actions as ActionItem[] | undefined) ?? [];
-
-    const seen = new Set<string>();
-    const allActions: ActionItem[] = [];
-    for (const a of [...rawUpdates, ...rawReplaces, ...rawDeletes]) {
-        const key = (a.target_text ?? '') + a.action_type;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        allActions.push(a);
-    }
-    const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
-    allActions.sort((a, b) => (priorityOrder[a.priority] ?? 3) - (priorityOrder[b.priority] ?? 3));
+    const topActions = _topActions;
+    const otherActions = _otherActions;
+    const allActions = _allActionsForMemo;
+    const selectedResumeText = _selectedResumeTextForMemo;
+    const matchedIndices = _matchedIndices;
 
     const typeColor: Record<string, string> = { update: '#f59e0b', replace: '#3b82f6', delete: '#ef4444' };
     const priorityColor: Record<string, string> = { high: '#ef4444', medium: '#f59e0b', low: '#9ca3af' };
@@ -1571,7 +1622,6 @@ function ResumeMappingView({ actions, profile }: {
         return [];
     }
 
-    const selectedResumeText = actions.selected_resume_text as string | null | undefined;
     const selectedResumeFilename = actions.selected_resume_filename as string | null | undefined;
 
     const basics = profile?.basics;
@@ -1598,6 +1648,7 @@ function ResumeMappingView({ actions, profile }: {
                         filename={selectedResumeFilename}
                         allActions={allActions}
                         activeIdx={selectedIdx}
+                        matchedIndices={matchedIndices}
                     />
                 ) : !profile ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: 200, gap: 10, color: '#9ca3af' }}>
@@ -1706,86 +1757,119 @@ function ResumeMappingView({ actions, profile }: {
 
                 {allActions.length === 0 ? (
                     <div style={{ fontSize: 13, color: 'var(--text-3)', padding: '16px 0' }}>No resume recommendations generated.</div>
-                ) : allActions.map((action, i) => {
-                    const isSelected = selectedIdx === i;
-                    const color = typeColor[action.action_type] ?? '#9ca3af';
-                    const jdChips = normalizeJdAlignment(action.jd_alignment);
+                ) : (() => {
+                    function renderCard(action: ActionItem, i: number) {
+                        const isSelected = selectedIdx === i;
+                        const color = typeColor[action.action_type] ?? '#9ca3af';
+                        const jdChips = normalizeJdAlignment(action.jd_alignment);
+                        const notFound = !!action.target_text && !matchedIndices.has(i) && !!selectedResumeText;
+
+                        return (
+                            <div
+                                key={i}
+                                onClick={() => handleCardClick(i)}
+                                style={{
+                                    padding: '10px 12px',
+                                    borderRadius: 'var(--radius-sm)',
+                                    border: `1px solid ${isSelected ? 'var(--border)' : 'var(--border-soft)'}`,
+                                    borderLeft: `3px solid ${color}`,
+                                    background: isSelected ? 'var(--bg-tint)' : 'var(--surface)',
+                                    cursor: 'pointer',
+                                    transition: 'background 0.12s',
+                                }}
+                            >
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color, background: `${color}18`, padding: '2px 6px', borderRadius: 3 }}>
+                                            {action.action_type}
+                                        </span>
+                                        <span style={{ fontSize: 10, color: 'var(--text-4)' }}>·</span>
+                                        <span style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'capitalize' }}>
+                                            {action.target_section.replace(/_/g, ' ')}
+                                        </span>
+                                    </div>
+                                    <span title={action.priority} style={{ width: 7, height: 7, borderRadius: '50%', background: priorityColor[action.priority] ?? '#9ca3af', flexShrink: 0, display: 'inline-block' }} />
+                                </div>
+
+                                {action.target_text && (
+                                    <div style={{ fontSize: 12, color: 'var(--text-3)', fontStyle: 'italic', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', marginBottom: notFound ? 3 : 4 }}>
+                                        &ldquo;{action.target_text}&rdquo;
+                                    </div>
+                                )}
+
+                                {notFound && (
+                                    <div style={{ fontSize: 10, color: '#f59e0b', marginBottom: 4 }}>
+                                        ⚠ not found in resume
+                                    </div>
+                                )}
+
+                                {action.suggested_text && (
+                                    <div style={{ fontSize: 12.5, color: 'var(--text)', marginBottom: 5, lineHeight: 1.5 }}>
+                                        → {action.suggested_text}
+                                    </div>
+                                )}
+
+                                {action.reason && (
+                                    <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginBottom: jdChips.length > 0 ? 6 : 0, lineHeight: 1.4 }}>
+                                        {action.reason}
+                                    </div>
+                                )}
+
+                                {jdChips.length > 0 && (
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: action.suggested_text ? 6 : 0 }}>
+                                        {jdChips.map((chip, j) => (
+                                            <span key={j} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: 'var(--accent-soft)', color: 'var(--accent)' }}>
+                                                {chip}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {action.suggested_text && (
+                                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
+                                        <button
+                                            onClick={e => { e.stopPropagation(); handleCopy(i, action.suggested_text!); }}
+                                            style={{
+                                                fontSize: 11, fontWeight: 500,
+                                                color: copiedIdx === i ? 'var(--strong)' : 'var(--text-3)',
+                                                background: 'none', border: '1px solid var(--border-soft)',
+                                                borderRadius: 'var(--radius-sm)', padding: '3px 8px',
+                                                cursor: 'pointer', transition: 'color 0.15s',
+                                                fontFamily: 'var(--font-body)',
+                                            }}
+                                        >
+                                            {copiedIdx === i ? 'Copied!' : 'Copy'}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    }
 
                     return (
-                        <div
-                            key={i}
-                            onClick={() => handleCardClick(i)}
-                            style={{
-                                padding: '10px 12px',
-                                borderRadius: 'var(--radius-sm)',
-                                border: `1px solid ${isSelected ? 'var(--border)' : 'var(--border-soft)'}`,
-                                borderLeft: `3px solid ${color}`,
-                                background: isSelected ? 'var(--bg-tint)' : 'var(--surface)',
-                                cursor: 'pointer',
-                                transition: 'background 0.12s',
-                            }}
-                        >
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 5 }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color, background: `${color}18`, padding: '2px 6px', borderRadius: 3 }}>
-                                        {action.action_type}
-                                    </span>
-                                    <span style={{ fontSize: 10, color: 'var(--text-4)' }}>·</span>
-                                    <span style={{ fontSize: 11, color: 'var(--text-3)', textTransform: 'capitalize' }}>
-                                        {action.target_section.replace(/_/g, ' ')}
-                                    </span>
-                                </div>
-                                <span title={action.priority} style={{ width: 7, height: 7, borderRadius: '50%', background: priorityColor[action.priority] ?? '#9ca3af', flexShrink: 0, display: 'inline-block' }} />
-                            </div>
-
-                            {action.target_text && (
-                                <div style={{ fontSize: 12, color: 'var(--text-3)', fontStyle: 'italic', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', marginBottom: 4 }}>
-                                    &ldquo;{action.target_text}&rdquo;
-                                </div>
+                        <>
+                            {topActions.length > 0 && (
+                                <>
+                                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', color: 'var(--accent)', textTransform: 'uppercase', paddingLeft: 2, marginTop: 2, marginBottom: 2 }}>
+                                        Top picks
+                                    </div>
+                                    {topActions.map((action, i) => renderCard(action, i))}
+                                </>
                             )}
-
-                            {action.suggested_text && (
-                                <div style={{ fontSize: 12.5, color: 'var(--text)', marginBottom: 5, lineHeight: 1.5 }}>
-                                    → {action.suggested_text}
-                                </div>
+                            {otherActions.length > 0 && (
+                                <>
+                                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.07em', color: 'var(--text-3)', textTransform: 'uppercase', paddingLeft: 2, marginTop: topActions.length > 0 ? 8 : 2, marginBottom: 2 }}>
+                                        All changes
+                                    </div>
+                                    {otherActions.map((action, i) => renderCard(action, topActions.length + i))}
+                                </>
                             )}
-
-                            {action.reason && (
-                                <div style={{ fontSize: 11.5, color: 'var(--text-3)', marginBottom: jdChips.length > 0 ? 6 : 0, lineHeight: 1.4 }}>
-                                    {action.reason}
-                                </div>
+                            {topActions.length === 0 && otherActions.length === 0 && (
+                                allActions.map((action, i) => renderCard(action, i))
                             )}
-
-                            {jdChips.length > 0 && (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: action.suggested_text ? 6 : 0 }}>
-                                    {jdChips.map((chip, j) => (
-                                        <span key={j} style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, background: 'var(--accent-soft)', color: 'var(--accent)' }}>
-                                            {chip}
-                                        </span>
-                                    ))}
-                                </div>
-                            )}
-
-                            {action.suggested_text && (
-                                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
-                                    <button
-                                        onClick={e => { e.stopPropagation(); handleCopy(i, action.suggested_text!); }}
-                                        style={{
-                                            fontSize: 11, fontWeight: 500,
-                                            color: copiedIdx === i ? 'var(--strong)' : 'var(--text-3)',
-                                            background: 'none', border: '1px solid var(--border-soft)',
-                                            borderRadius: 'var(--radius-sm)', padding: '3px 8px',
-                                            cursor: 'pointer', transition: 'color 0.15s',
-                                            fontFamily: 'var(--font-body)',
-                                        }}
-                                    >
-                                        {copiedIdx === i ? 'Copied!' : 'Copy'}
-                                    </button>
-                                </div>
-                            )}
-                        </div>
+                        </>
                     );
-                })}
+                })()}
             </div>
         </div>
     );
@@ -2177,7 +2261,6 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     const [savedAt, setSavedAt] = useState<Date | null>(null);
     const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
     const [profileDocCount, setProfileDocCount] = useState<number | null>(null);
-    const [rateLimitMsg, setRateLimitMsg] = useState<string | null>(null);
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -2317,13 +2400,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
         try {
             await api.retrySteps(job.id, [stepKey]);
         } catch (err) {
-            if (isApiError(err) && err.status === 429) {
-                const secs = err.retryAfter ?? 60;
-                setRateLimitMsg(`Too many requests — try again in ${Math.ceil(secs / 60)} min.`);
-                setTimeout(() => setRateLimitMsg(null), secs * 1000);
-            } else {
-                console.error('Failed to retry step:', stepKey, err);
-            }
+            console.error('Failed to retry step:', stepKey, err);
             setStepStatuses(prev => ({ ...prev, [stepKey]: 'error' }));
             setStepErrors(prev => ({ ...prev, [stepKey]: 'Failed to start retry.' }));
         }
@@ -2356,13 +2433,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             // Full session load (fills in any data already available)
             await load();
         } catch (err) {
-            if (isApiError(err) && err.status === 429) {
-                const secs = err.retryAfter ?? 60;
-                setRateLimitMsg(`Too many requests — try again in ${Math.ceil(secs / 60)} min.`);
-                setTimeout(() => setRateLimitMsg(null), secs * 1000);
-            } else {
-                console.error('Failed to run JobLens:', err);
-            }
+            console.error('Failed to run JobLens:', err);
         }
     };
 
@@ -2596,17 +2667,6 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                             <p style={{ fontSize: 13, color: 'var(--accent-ink)' }}>
                                 JobLens pipeline is running — results appear as each step completes
                             </p>
-                        </div>
-                    )}
-
-                    {/* Rate limit banner */}
-                    {rateLimitMsg && (
-                        <div style={{
-                            padding: '10px 14px', borderRadius: 'var(--radius-sm)',
-                            background: 'var(--surface-2)', border: '1px solid var(--border)',
-                            fontSize: 13, color: 'var(--text-2)',
-                        }}>
-                            {rateLimitMsg}
                         </div>
                     )}
 

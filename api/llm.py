@@ -2,12 +2,11 @@
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Union
 
 from pydantic import BaseModel
 
 from engine.providers import DEFAULT_DEEPSEEK_MODEL, DEFAULT_XAI_MODEL, DeepSeekClient, XAIClient
-from engine.usage import UsageCollector
 
 
 CONFIG_PATH = Path(__file__).with_name("llm_config.json")
@@ -15,8 +14,8 @@ CONFIG_PATH = Path(__file__).with_name("llm_config.json")
 DEFAULT_TASK_MODELS = {
     "default": DEFAULT_XAI_MODEL,
     "profile": DEFAULT_XAI_MODEL,
-    "job_description": DEFAULT_XAI_MODEL,
-    "company_intel": DEFAULT_XAI_MODEL,
+    "job_description": "grok-3-mini",
+    "company_intel": "grok-3-mini",
     "job_match": DEFAULT_XAI_MODEL,
     "reachout": DEFAULT_XAI_MODEL,
     "cover_letter": DEFAULT_XAI_MODEL,
@@ -83,19 +82,10 @@ def resolve_llm_settings(task: str = "default") -> LLMRuntimeSettings:
     )
 
 
-def get_llm(
-    task: str = "default",
-    collector: Optional[UsageCollector] = None,
-) -> Union[XAIClient, DeepSeekClient]:
-    """Create the engine-compatible LLM client for a task.
+def get_llm(task: str = "default") -> Union[XAIClient, DeepSeekClient]:
+    """Create the engine-compatible LLM client for a task."""
 
-    Pass a UsageCollector to capture token counts from every complete() call
-    made on the returned client. The collector is thread-safe for single-task
-    use; do not share one collector across concurrent requests.
-    """
-    client = build_llm_from_settings(resolve_llm_settings(task))
-    client.collector = collector  # None = no-op; provider clients check before appending
-    return client
+    return build_llm_from_settings(resolve_llm_settings(task))
 
 
 def build_llm_from_settings(settings: LLMRuntimeSettings | Dict[str, Any]) -> Union[XAIClient, DeepSeekClient]:
