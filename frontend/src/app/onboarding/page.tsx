@@ -1330,15 +1330,15 @@ function Done({
 // ─── Root Page ────────────────────────────────────────────────────────────────
 
 export default function OnboardingPage() {
-  const { isAuthenticated, _hasHydrated, user, setOnboardingComplete, fetchUser } = useStore();
+  const { isAuthenticated, token, _hasHydrated, user, setOnboardingComplete, fetchUser } = useStore();
   const router = useRouter();
   const [step, setStep] = useState<'terms' | 'done'>('terms');
 
   useEffect(() => {
-    if (_hasHydrated && !isAuthenticated) {
+    if (_hasHydrated && !token) {
       router.push('/');
     }
-  }, [_hasHydrated, isAuthenticated, router]);
+  }, [_hasHydrated, token, router]);
 
   const handleDone = async (dest: '/dashboard' | '/profile') => {
     try {

@@ -15,6 +15,7 @@ from ..database import get_db
 from ..auth import oauth, create_access_token, get_or_create_user, get_current_user
 from ..schemas import TokenResponse, UserResponse, UserUpdate
 from ..models import User
+from ..limiter import limiter
 
 AVATAR_DIR = "api/uploads/avatars"
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
@@ -31,6 +32,7 @@ def _clear_google_oauth_state(request: Request) -> None:
 
 
 @router.get("/google")
+@limiter.limit("5/minute")
 async def google_login(request: Request):
     """Redirect to Google OAuth."""
     _clear_google_oauth_state(request)
@@ -40,6 +42,7 @@ async def google_login(request: Request):
 
 
 @router.get("/google/callback")
+@limiter.limit("10/minute")
 async def google_callback(request: Request, db: Session = Depends(get_db)):
     """Handle Google OAuth callback."""
     try:
@@ -135,7 +138,9 @@ async def update_profile(
 
 
 @router.post("/avatar", response_model=UserResponse)
+@limiter.limit("10/minute")
 async def upload_avatar(
+    request: Request,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),

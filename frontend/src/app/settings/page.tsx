@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/utils/store';
-import { api } from '@/utils/api';
+import { api, isApiError } from '@/utils/api';
 import Header from '@/components/Header';
 import ConfirmationModal from '@/components/ConfirmationModal';
 import UserAvatar from '@/components/UserAvatar';
@@ -78,7 +78,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 export default function SettingsPage() {
   const router = useRouter();
-  const { user, isAuthenticated, _hasHydrated, fetchUser, logout, theme, toggleTheme } = useStore();
+  const { user, isAuthenticated, token, _hasHydrated, fetchUser, logout, theme, toggleTheme, billing } = useStore();
 
   const [name, setName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
@@ -89,6 +89,7 @@ export default function SettingsPage() {
 
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [isDeletingAvatar, setIsDeletingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState('');
   const [avatarHover, setAvatarHover] = useState(false);
   const avatarInputRef = useRef<HTMLInputElement>(null);
 
@@ -99,9 +100,9 @@ export default function SettingsPage() {
   const cropImgRef = useRef<HTMLImageElement>(null);
 
   useEffect(() => {
-    if (_hasHydrated && !isAuthenticated) router.push('/');
+    if (_hasHydrated && !token) router.push('/');
     if (user) setName(user.name ?? '');
-  }, [user, isAuthenticated, _hasHydrated, router]);
+  }, [user, token, _hasHydrated, router]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -166,9 +167,17 @@ export default function SettingsPage() {
     setCropSrc(null);
     setCropFile(null);
     setIsUploadingAvatar(true);
+    setAvatarError('');
     try {
       const updated = await api.uploadAvatar(croppedFile);
       useStore.setState({ user: updated });
+    } catch (err) {
+      if (isApiError(err) && err.status === 429) {
+        const secs = err.retryAfter ?? 60;
+        setAvatarError(`Too many uploads — try again in ${Math.ceil(secs / 60)} min.`);
+      } else if (isApiError(err)) {
+        setAvatarError(err.message);
+      }
     } finally {
       setIsUploadingAvatar(false);
     }
@@ -207,8 +216,37 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div style={{ padding: '28px 24px 100px', maxWidth: 600, display: 'flex', flexDirection: 'column', gap: 36 }}>
+      <div style={{ padding: '28px 24px 100px', display: 'grid', gridTemplateColumns: '188px minmax(0, 1fr)', gap: 28, alignItems: 'flex-start', maxWidth: 1080 }}>
+        {/* Sub-nav */}
+        <nav style={{ position: 'sticky', top: 90, display: 'flex', flexDirection: 'column', gap: 1 }}>
+          <button
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, height: 34, padding: '0 10px',
+              borderRadius: 'var(--radius-sm)', textAlign: 'left',
+              background: 'var(--surface)', color: 'var(--text)', boxShadow: 'var(--shadow-1)',
+              fontSize: 13, fontWeight: 500, transition: 'all 140ms ease',
+            }}
+          >
+            <Icon name="user" size={15} />
+            <span style={{ flex: 1 }}>Account</span>
+          </button>
+          <button
+            onClick={() => router.push('/billing')}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 10, height: 34, padding: '0 10px',
+              borderRadius: 'var(--radius-sm)', textAlign: 'left',
+              background: 'transparent', color: 'var(--text-2)',
+              fontSize: 13, fontWeight: 500, transition: 'all 140ms ease',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = 'var(--surface-2)'; }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; }}
+          >
+            <Icon name="sparkles" size={15} />
+            <span style={{ flex: 1 }}>Billing & usage</span>
+          </button>
+        </nav>
 
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 36, minWidth: 0 }}>
         {/* ── Account ──────────────────────────────────────────────── */}
         <Section title="Account">
           <div style={{
@@ -265,6 +303,17 @@ export default function SettingsPage() {
                 <div style={{ fontSize: 12.5, color: 'var(--text-3)', marginTop: 1 }}>{user.email}</div>
               </div>
 
+              {billing && (
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5, height: 26, padding: '0 10px',
+                  borderRadius: 999, background: 'var(--accent-soft)', color: 'var(--accent-ink)',
+                  fontSize: 12, fontWeight: 500, border: '1px solid var(--accent-border)',
+                }}>
+                  <Icon name="sparkles" size={13} />
+                  {billing.plan_name}
+                </div>
+              )}
+
               {/* Delete avatar button — only when a picture is set */}
               {user.profile_picture && (
                 <button
@@ -289,6 +338,13 @@ export default function SettingsPage() {
                 </button>
               )}
             </div>
+
+            {/* Avatar error */}
+            {avatarError && (
+              <div style={{ padding: '8px 18px', fontSize: 12.5, color: 'var(--weak)' }}>
+                {avatarError}
+              </div>
+            )}
 
             {/* Edit form */}
             <form onSubmit={handleSave} style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -412,6 +468,7 @@ export default function SettingsPage() {
           </SettingRow>
         </Section>
 
+        </div>
       </div>
 
       {/* Sign out confirmation */}

@@ -5,7 +5,7 @@ Database Models
 import uuid
 from datetime import datetime
 from enum import Enum
-from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Integer, Float, JSON, Boolean
+from sqlalchemy import Column, String, DateTime, Text, ForeignKey, Integer, Float, JSON, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -42,6 +42,7 @@ class User(Base):
     profile = relationship("UserProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
     joblens_sessions = relationship("JobLensSession", back_populates="user", cascade="all, delete-orphan")
     profile_files = relationship("ProfileFile", back_populates="user", cascade="all, delete-orphan")
+    subscription = relationship("Subscription", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
 
 class Job(Base):
@@ -182,3 +183,111 @@ class JobLensSession(Base):
     # Relationships
     user = relationship("User", back_populates="joblens_sessions")
     job = relationship("Job")
+
+
+# ── Billing tables ────────────────────────────────────────────────────────────
+
+class Plan(Base):
+    """Static plan catalogue. Seeded once at startup — do not mutate at runtime."""
+
+    __tablename__ = "plans"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    code = Column(String, unique=True, nullable=False)          # free|starter|pro|power
+    name = Column(String, nullable=False)
+    price_cents = Column(Integer, nullable=False, default=0)
+    stripe_price_id = Column(String, nullable=True)             # None for free tier
+    monthly_credits = Column(Integer, nullable=False)
+    # daily_caps shape: {"actions": N} for Free; {"job_analysis": N, "cover_letter": N} for paid
+    daily_caps = Column(JSON, nullable=False)
+    weekly_caps = Column(JSON, nullable=True)                   # None for Free
+    profile_build_daily_cap = Column(Integer, nullable=False, default=1)
+    upload_daily_cap = Column(Integer, nullable=False, default=8)
+    per_min_burst = Column(Integer, nullable=False, default=30) # in credits
+
+
+class Subscription(Base):
+    """One row per user — the user's current plan, Stripe ids, and period dates."""
+
+    __tablename__ = "subscriptions"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, unique=True)
+    plan_id = Column(String(36), ForeignKey("plans.id"), nullable=False)
+    stripe_customer_id = Column(String, nullable=True, index=True)
+    stripe_subscription_id = Column(String, nullable=True, index=True)
+    # status: trialing | active | past_due | canceled
+    status = Column(String, nullable=False, default="active")
+    cancel_at_period_end = Column(Boolean, nullable=False, default=False)
+    current_period_start = Column(DateTime, nullable=True)
+    current_period_end = Column(DateTime, nullable=True)        # used for Free lazy monthly reset
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    user = relationship("User", back_populates="subscription")
+    plan = relationship("Plan")
+
+
+class CreditLedger(Base):
+    """Append-only credit ledger. Balance = SUM(delta) WHERE user_id = ?.
+    NEVER update a row. Always insert a new one.
+    """
+
+    __tablename__ = "credit_ledger"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    delta = Column(Integer, nullable=False)         # positive = credit in, negative = credit out
+    # kind: grant | topup | reserve | refund | expire
+    kind = Column(String, nullable=False)
+    task_type = Column(String, nullable=True)       # job_analysis|cover_letter|profile_build|reachout
+    ref = Column(String, nullable=False, index=True)  # idempotency key
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    # (ref, kind) must be unique — prevents double-processing the same event.
+    __table_args__ = (UniqueConstraint("ref", "kind", name="uq_ledger_ref_kind"),)
+
+
+class UsageEvent(Base):
+    """One row per LLM-backed task (charged or free). Source of truth for margin analytics."""
+
+    __tablename__ = "usage_events"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    task_type = Column(String, nullable=False)
+    provider = Column(String, nullable=False, default="grok")
+    model = Column(String, nullable=False, default="grok-3")
+    input_tokens = Column(Integer, nullable=False, default=0)
+    output_tokens = Column(Integer, nullable=False, default=0)
+    raw_cost_usd = Column(Float, nullable=False, default=0.0)   # what WE paid the provider
+    credits_charged = Column(Integer, nullable=False, default=0) # what the USER was charged
+    failed = Column(Boolean, nullable=False, default=False)      # True if task failed (refunded)
+    ref = Column(String, nullable=True, index=True)             # ties back to the reservation
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class RateWindow(Base):
+    """Fixed-window rate-limit counters. SQLite MVP — swap for Redis at scale."""
+
+    __tablename__ = "rate_windows"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id"), nullable=False, index=True)
+    # key examples: "daily:job_analysis:2026-06-01" | "daily:actions:2026-06-01" | "min:job_analysis:27543210"
+    window_key = Column(String, nullable=False)
+    count = Column(Integer, nullable=False, default=0)
+    limit = Column(Integer, nullable=False)
+    resets_at = Column(DateTime, nullable=False)
+
+    __table_args__ = (UniqueConstraint("user_id", "window_key", name="uq_user_window"),)
+
+
+class ProcessedWebhook(Base):
+    """Stripe webhook idempotency store. If stripe_event_id exists, skip re-processing."""
+
+    __tablename__ = "processed_webhooks"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    stripe_event_id = Column(String, unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)

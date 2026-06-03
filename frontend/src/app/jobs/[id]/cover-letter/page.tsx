@@ -116,7 +116,7 @@ export default function CoverLetterPage({ params }: { params: Promise<{ id: stri
             } else if (isApiError(err) && err.status === 402) {
                 setUpgrade({ open: true, kind: 'credits', needed: err.body?.needed, balance: err.body?.balance });
             } else if (isApiError(err) && err.status === 429) {
-                setUpgrade({ open: true, kind: 'rate_limit', retryAfter: err.body?.retry_after });
+                setUpgrade({ open: true, kind: 'rate_limit', retryAfter: err.retryAfter ?? err.body?.retry_after });
             } else {
                 alert('Failed to generate cover letter');
             }

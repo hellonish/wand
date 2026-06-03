@@ -31,7 +31,8 @@ from ..auth import get_current_user
 from ..billing.ledger import expire_grant, get_balance, grant, write_usage_event
 from ..billing.subscriptions import get_or_create_subscription
 from ..database import SessionLocal, get_db
-from ..models import Plan, ProcessedWebhook, RateWindow, Subscription, User
+from ..limiter import limiter
+from ..models import CreditLedger, Plan, ProcessedWebhook, RateWindow, Subscription, User
 
 logger = logging.getLogger(__name__)
 
@@ -68,11 +69,16 @@ class BillingStatusOut(BaseModel):
     plan_code: str
     plan_name: str
     status: str
+    cancel_at_period_end: bool
     balance: int
+    grant_balance: int       # credits remaining from monthly plan allocation
+    topup_total: int         # total topup credits ever purchased (for "X of Y" display)
+    topup_remaining: int     # topup credits still available
     period_end: datetime | None
     daily_caps: dict
     weekly_caps: dict | None
     monthly_credits: int
+    scheduled_downgrade: str | None = None
 
 
 class CheckoutRequest(BaseModel):
@@ -107,15 +113,49 @@ async def billing_status(
     sub = get_or_create_subscription(db, current_user.id)
     plan = sub.plan
     balance = get_balance(db, current_user.id)
+
+    # Separate grant vs topup balances. Topup entries are always positive additions;
+    # spends (reserve) drain grant first. grant_balance = max(0, balance - topup_total).
+    topup_total = int(
+        db.query(func.coalesce(func.sum(CreditLedger.delta), 0))
+        .filter(CreditLedger.user_id == current_user.id, CreditLedger.kind == "topup")
+        .scalar() or 0
+    )
+    grant_balance = max(0, balance - topup_total)
+    topup_remaining = max(0, min(balance, topup_total))
+
+    scheduled_downgrade = None
+    if sub.stripe_subscription_id and sub.status in ("active", "trialing"):
+        try:
+            _stripe = _stripe_client()
+            stripe_sub = _stripe.Subscription.retrieve(sub.stripe_subscription_id)
+            if stripe_sub.schedule:
+                sched = _stripe.SubscriptionSchedule.retrieve(stripe_sub.schedule)
+                if len(sched.phases) > 1:
+                    next_price = sched.phases[1].items[0].price
+                    price_map = {
+                        os.getenv("STRIPE_PRICE_STARTER"): "starter",
+                        os.getenv("STRIPE_PRICE_PRO"): "pro",
+                        os.getenv("STRIPE_PRICE_MAX"): "max",
+                    }
+                    scheduled_downgrade = price_map.get(next_price)
+        except Exception as e:
+            logger.error(f"Error checking stripe schedule: {e}")
+
     return BillingStatusOut(
         plan_code=plan.code,
         plan_name=plan.name,
         status=sub.status,
+        cancel_at_period_end=sub.cancel_at_period_end,
         balance=balance,
+        grant_balance=grant_balance,
+        topup_total=topup_total,
+        topup_remaining=topup_remaining,
         period_end=sub.current_period_end,
         daily_caps=plan.daily_caps,
         weekly_caps=plan.weekly_caps,
         monthly_credits=plan.monthly_credits,
+        scheduled_downgrade=scheduled_downgrade,
     )
 
 
@@ -150,8 +190,89 @@ async def usage_history(
     ]
 
 
+@router.get("/preview-change")
+async def preview_change(
+    plan_code: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Preview the exact financial impact of an upgrade or downgrade."""
+    _stripe = _stripe_client()
+
+    price_env_map = {
+        "starter": "STRIPE_PRICE_STARTER",
+        "pro": "STRIPE_PRICE_PRO",
+        "max": "STRIPE_PRICE_MAX",
+    }
+    env_key = price_env_map.get(plan_code)
+    if not env_key:
+        raise HTTPException(status_code=400, detail=f"Unknown plan: {plan_code}")
+
+    price_id = os.getenv(env_key)
+    if not price_id:
+        raise HTTPException(status_code=503, detail=f"Stripe price not configured for {plan_code}.")
+
+    sub = get_or_create_subscription(db, current_user.id)
+    if not sub.stripe_subscription_id or sub.status not in ("active", "trialing"):
+        return {
+            "type": "new_subscription",
+            "immediate_charge_cents": None,
+            "next_cycle_date": None,
+            "next_cycle_charge_cents": None,
+        }
+
+    try:
+        stripe_sub = _stripe.Subscription.retrieve(sub.stripe_subscription_id)
+        current_item = stripe_sub["items"]["data"][0]
+        
+        if current_item["price"]["id"] == price_id:
+            return {"type": "same_plan"}
+
+        new_plan = db.query(Plan).filter(Plan.code == plan_code).first()
+        old_plan = db.query(Plan).filter(Plan.id == sub.plan_id).first()
+
+        is_downgrade = new_plan.monthly_credits < old_plan.monthly_credits
+
+        if is_downgrade:
+            upcoming = _stripe.Invoice.create_preview(
+                customer=sub.stripe_customer_id,
+                subscription=sub.stripe_subscription_id,
+                subscription_details={
+                    "items": [{"id": current_item["id"], "price": price_id}],
+                    "proration_behavior": "none",
+                }
+            )
+            upc_dict = upcoming.to_dict()
+            return {
+                "type": "downgrade",
+                "immediate_charge_cents": 0,
+                "next_cycle_date": upc_dict.get("period_end"),
+                "next_cycle_charge_cents": upc_dict.get("amount_due"),
+            }
+        else:
+            upcoming = _stripe.Invoice.create_preview(
+                customer=sub.stripe_customer_id,
+                subscription=sub.stripe_subscription_id,
+                subscription_details={
+                    "items": [{"id": current_item["id"], "price": price_id}],
+                    "proration_behavior": "create_prorations",
+                }
+            )
+            upc_dict = upcoming.to_dict()
+            return {
+                "type": "upgrade",
+                "immediate_charge_cents": upc_dict.get("amount_due"),
+                "next_cycle_date": None,
+                "next_cycle_charge_cents": None,
+            }
+    except Exception as e:
+        logger.error(f"Error previewing plan change: {e}")
+        raise HTTPException(status_code=500, detail="Unable to calculate plan change preview.")
+
 @router.post("/checkout")
+@limiter.limit("5/minute")
 async def create_checkout(
+    request: Request,
     body: CheckoutRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -190,31 +311,68 @@ async def create_checkout(
             if current_item["price"]["id"] == price_id:
                 return {"url": f"{FRONTEND_URL}/billing"}
 
-            _stripe.Subscription.modify(
-                sub.stripe_subscription_id,
-                items=[{"id": current_item["id"], "price": price_id}],
-                proration_behavior="create_prorations",
-                metadata={"user_id": current_user.id},
-            )
-
-            # Apply the plan change in our DB immediately.
             new_plan = db.query(Plan).filter(Plan.code == body.plan_code).first()
             old_plan = db.query(Plan).filter(Plan.id == sub.plan_id).first()
-            if new_plan and old_plan and new_plan.id != old_plan.id:
-                from datetime import datetime as _dt
-                sub.plan_id = new_plan.id
-                sub.status = "active"
-                db.commit()
-                # Grant the upgrade delta (downgrades keep current balance — no rollback).
-                delta = new_plan.monthly_credits - old_plan.monthly_credits
-                if delta > 0:
-                    ref = f"switch:{sub.stripe_subscription_id}:{new_plan.code}:{_dt.utcnow():%Y-%m}"
-                    grant(db, current_user.id, delta, ref=ref, kind="grant")
 
-            return {"url": f"{FRONTEND_URL}/billing?success=1"}
-        except Exception:
+            if not new_plan or not old_plan:
+                raise HTTPException(status_code=400, detail="Invalid plan transition.")
+
+            is_downgrade = new_plan.monthly_credits < old_plan.monthly_credits
+
+            if is_downgrade:
+                # ── DOWNGRADE PATH ──
+                # If there's already a schedule attached (e.g. from a previous downgrade), release it first.
+                if stripe_sub.schedule:
+                    _stripe.SubscriptionSchedule.release(stripe_sub.schedule)
+
+                # Create a subscription schedule to apply the downgrade at the next billing cycle.
+                schedule = _stripe.SubscriptionSchedule.create(
+                    from_subscription=sub.stripe_subscription_id
+                )
+                current_phase = schedule.phases[0]
+                _stripe.SubscriptionSchedule.modify(
+                    schedule.id,
+                    end_behavior="release",
+                    phases=[
+                        {
+                            "start_date": current_phase.start_date,
+                            "end_date": current_phase.end_date,
+                            "items": [{"price": current_phase.items[0].price, "quantity": 1}],
+                        },
+                        {
+                            "start_date": current_phase.end_date,
+                            "items": [{"price": price_id, "quantity": 1}],
+                        }
+                    ],
+                )
+                # DB plan stays the same until the next cycle's webhook fires.
+                return {"url": f"{FRONTEND_URL}/billing?success=1&downgrade=1"}
+            else:
+                # ── UPGRADE PATH ──
+                _stripe.Subscription.modify(
+                    sub.stripe_subscription_id,
+                    items=[{"id": current_item["id"], "price": price_id}],
+                    proration_behavior="always_invoice",
+                    metadata={"user_id": current_user.id},
+                )
+
+                # Apply the plan change in our DB immediately.
+                if new_plan.id != old_plan.id:
+                    from datetime import datetime as _dt
+                    sub.plan_id = new_plan.id
+                    sub.status = "active"
+                    db.commit()
+                    # Grant the upgrade delta immediately.
+                    delta = new_plan.monthly_credits - old_plan.monthly_credits
+                    if delta > 0:
+                        ref = f"switch:{sub.stripe_subscription_id}:{new_plan.code}:{_dt.utcnow():%Y-%m}"
+                        grant(db, current_user.id, delta, ref=ref, kind="grant")
+
+                return {"url": f"{FRONTEND_URL}/billing?success=1"}
+        except Exception as e:
             # If the stored subscription is stale/invalid in Stripe, fall through
             # to a fresh Checkout below rather than failing the request.
+            logger.error(f"Error modifying subscription in checkout: {e}")
             db.rollback()
             pass
 
@@ -235,7 +393,9 @@ async def create_checkout(
 
 
 @router.post("/portal")
+@limiter.limit("5/minute")
 async def create_portal(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -257,7 +417,9 @@ async def create_portal(
 
 
 @router.post("/topup")
+@limiter.limit("5/minute")
 async def create_topup(
+    request: Request,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -269,6 +431,12 @@ async def create_topup(
         raise HTTPException(status_code=503, detail="Top-up price not configured.")
 
     sub = get_or_create_subscription(db, current_user.id)
+    if sub.plan.code == "free":
+        raise HTTPException(
+            status_code=400,
+            detail="Top-ups are only available on paid plans."
+        )
+
     customer_id = sub.stripe_customer_id or None
 
     session = _stripe.checkout.Session.create(
@@ -286,6 +454,7 @@ async def create_topup(
 # ── Webhook ───────────────────────────────────────────────────────────────────
 
 @router.post("/webhook")
+@limiter.exempt
 async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     """Stripe events — the source of truth for all subscription/credit state.
 
@@ -297,14 +466,21 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=503, detail="Webhook secret not configured.")
 
     stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
-    payload = await request.body()
+    # Decode to str: stripe.WebhookSignature.verify_header signs over
+    # "%d.%s" % (timestamp, payload) and does NOT decode bytes itself, so
+    # passing raw bytes makes it sign the b'...' repr — no signature ever
+    # matches and every real webhook 400s. (construct_event used to decode
+    # for us; verify_header does not.)
+    payload = (await request.body()).decode("utf-8")
     sig_header = request.headers.get("stripe-signature", "")
 
     try:
-        event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
+        stripe.WebhookSignature.verify_header(payload, sig_header, webhook_secret)
     except stripe.error.SignatureVerificationError:
         raise HTTPException(status_code=400, detail="Invalid Stripe signature.")
 
+    import json
+    event = json.loads(payload)
     event_id = event["id"]
 
     # Idempotency: skip already-processed events.
@@ -329,7 +505,7 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
     try:
         if event_type == "checkout.session.completed":
             _handle_checkout_completed(db, data)
-        elif event_type == "invoice.paid":
+        elif event_type in ("invoice.paid", "invoice.payment_succeeded"):
             _handle_invoice_paid(db, data)
         elif event_type == "customer.subscription.updated":
             _handle_subscription_updated(db, data)
@@ -338,8 +514,12 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         elif event_type == "customer.subscription.deleted":
             _handle_subscription_deleted(db, data)
         # All other event types: return 200 and do nothing.
-    except Exception:
+    except Exception as e:
         logger.exception("Error handling Stripe event %s (%s)", event_id, event_type)
+        with open("webhook_error.log", "a") as f:
+            import traceback
+            f.write(f"Error handling {event_type}:\n")
+            f.write(traceback.format_exc() + "\n")
         # Do NOT raise — return 200 so Stripe doesn't retry indefinitely.
         # The event_id is already marked processed; investigate via Stripe dashboard.
 
@@ -404,6 +584,7 @@ def _handle_checkout_completed(db: Session, data: dict) -> None:
     if stripe_sub_id:
         sub.stripe_subscription_id = stripe_sub_id
     sub.status = "active"
+    sub.cancel_at_period_end = False
     db.commit()
     # Credits are granted on the subsequent invoice.paid event.
 
@@ -478,6 +659,7 @@ def _handle_invoice_paid(db: Session, data: dict) -> None:
         sub.current_period_end = datetime.utcfromtimestamp(period_end)
 
     sub.status = "active"
+    sub.cancel_at_period_end = False
     db.commit()
 
 
@@ -506,6 +688,16 @@ def _handle_subscription_updated(db: Session, data: dict) -> None:
     new_status = data.get("status")
     if new_status:
         sub.status = new_status
+
+    # Stripe API 2026-05-27.dahlia+ represents "cancel at period end" as
+    # cancel_at=<timestamp> with cancel_at_period_end=false. Support both.
+    cancel_at = data.get("cancel_at")
+    cancel_at_period_end = data.get("cancel_at_period_end")
+    if cancel_at_period_end is not None or "cancel_at" in data:
+        sub.cancel_at_period_end = bool(cancel_at_period_end) or (cancel_at is not None)
+        # cancel_at holds the exact expiry epoch — keep period_end in sync.
+        if cancel_at:
+            sub.current_period_end = datetime.utcfromtimestamp(cancel_at)
 
     db.commit()
 
@@ -561,15 +753,21 @@ def _extract_price_id(obj: dict) -> str | None:
 
 
 def _resolve_plan_from_invoice(db: Session, invoice_data: dict) -> Plan | None:
-    """Extract the Stripe price ID from invoice line items and match to a Plan row."""
+    """Extract the plan from invoice line items.
+
+    Proration invoices contain multiple line items (credit for old plan, debit for new plan).
+    We pick the plan with the highest monthly_credits so an upgrade proration invoice
+    resolves to the new (upgraded) plan rather than the old one, which appears first.
+    """
     lines = (invoice_data.get("lines") or {}).get("data") or []
+    best: Plan | None = None
     for line in lines:
         price_id = _extract_price_id(line)
         if price_id:
             plan = db.query(Plan).filter(Plan.stripe_price_id == price_id).first()
-            if plan:
-                return plan
-    return None
+            if plan and (best is None or plan.monthly_credits > best.monthly_credits):
+                best = plan
+    return best
 
 
 def _resolve_plan_from_subscription(db: Session, sub_data: dict) -> Plan | None:

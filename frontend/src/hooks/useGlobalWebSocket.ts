@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useStore } from '@/utils/store';
 
-const WS_URL = 'ws://localhost:8000/ws';
+const WS_URL = `${process.env.NEXT_PUBLIC_WS_BASE_URL || 'ws://localhost:8000'}/ws`;
 const PING_INTERVAL_MS = 25_000;  // send ping every 25s to keep connection alive
 const RECONNECT_BASE_MS = 1_000;  // first retry after 1s
 const RECONNECT_MAX_MS  = 30_000; // cap at 30s

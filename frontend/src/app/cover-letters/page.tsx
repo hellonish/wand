@@ -215,7 +215,7 @@ export default function CoverLettersPage() {
             } else if (isApiError(err) && err.status === 402) {
                 setUpgrade({ open: true, kind: 'credits', needed: err.body?.needed, balance: err.body?.balance });
             } else if (isApiError(err) && err.status === 429) {
-                setUpgrade({ open: true, kind: 'rate_limit', retryAfter: err.body?.retry_after });
+                setUpgrade({ open: true, kind: 'rate_limit', retryAfter: err.retryAfter ?? err.body?.retry_after });
             } else {
                 console.error(err);
             }
@@ -361,9 +361,7 @@ export default function CoverLettersPage() {
                                         style={{
                                             display: 'block', width: '100%', textAlign: 'left',
                                             padding: '12px 14px',
-                                            borderBottom: '1px solid var(--border-soft)',
                                             background: isActive ? 'var(--bg-tint)' : 'transparent',
-                                            borderLeft: `2px solid ${isActive ? 'var(--accent)' : 'transparent'}`,
                                             transition: 'all 120ms',
                                             cursor: 'pointer',
                                             border: 'none',

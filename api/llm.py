@@ -2,11 +2,12 @@
 
 import json
 from pathlib import Path
-from typing import Any, Dict, Union
+from typing import Any, Dict, Optional, Union
 
 from pydantic import BaseModel
 
 from engine.providers import DEFAULT_DEEPSEEK_MODEL, DEFAULT_XAI_MODEL, DeepSeekClient, XAIClient
+from engine.usage import UsageCollector
 
 
 CONFIG_PATH = Path(__file__).with_name("llm_config.json")
@@ -82,10 +83,19 @@ def resolve_llm_settings(task: str = "default") -> LLMRuntimeSettings:
     )
 
 
-def get_llm(task: str = "default") -> Union[XAIClient, DeepSeekClient]:
-    """Create the engine-compatible LLM client for a task."""
+def get_llm(
+    task: str = "default",
+    collector: Optional[UsageCollector] = None,
+) -> Union[XAIClient, DeepSeekClient]:
+    """Create the engine-compatible LLM client for a task.
 
-    return build_llm_from_settings(resolve_llm_settings(task))
+    Pass a UsageCollector to capture token counts from every complete() call
+    made on the returned client. The collector is thread-safe for single-task
+    use; do not share one collector across concurrent requests.
+    """
+    client = build_llm_from_settings(resolve_llm_settings(task))
+    client.collector = collector  # None = no-op; provider clients check before appending
+    return client
 
 
 def build_llm_from_settings(settings: LLMRuntimeSettings | Dict[str, Any]) -> Union[XAIClient, DeepSeekClient]:

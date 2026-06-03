@@ -55,7 +55,8 @@ async function fetchWithAuth(url: string, options: FetchOptions = {}) {
             ? rawDetail
             : rawDetail != null && typeof rawDetail === 'object'
             ? (rawDetail as { message?: string }).message ?? JSON.stringify(rawDetail)
-            : error.message;
+            : error.error  // slowapi 429 uses {error: "..."} instead of {detail: "..."}
+            ?? error.message;
         const apiError = new Error(detail || 'Request failed') as ApiError;
         apiError.status = response.status;
         if (rawDetail != null && typeof rawDetail === 'object') {
@@ -64,6 +65,14 @@ async function fetchWithAuth(url: string, options: FetchOptions = {}) {
         // Attach structured code from the detail object when available (e.g. NO_PROFILE_DOCUMENTS)
         if (rawDetail != null && typeof rawDetail === 'object' && (rawDetail as { code?: string }).code) {
             apiError.code = (rawDetail as { code: string }).code;
+        }
+        // Extract retry-after for 429s — prefer body retry_after, fall back to Retry-After header
+        if (response.status === 429) {
+            const headerRetry = response.headers.get('Retry-After');
+            const bodyRetry = rawDetail != null && typeof rawDetail === 'object'
+                ? (rawDetail as { retry_after?: number }).retry_after
+                : undefined;
+            apiError.retryAfter = bodyRetry ?? (headerRetry ? parseInt(headerRetry, 10) : 60);
         }
         throw apiError;
     }
@@ -76,6 +85,7 @@ async function fetchWithAuth(url: string, options: FetchOptions = {}) {
 export interface ApiError extends Error {
     code?: string;
     status?: number;
+    retryAfter?: number;
     body?: {
         detail?: string;
         needed?: number;
@@ -109,11 +119,17 @@ export interface BillingStatus {
     plan_code: 'free' | 'starter' | 'pro' | 'max';
     plan_name: string;
     status: 'active' | 'trialing' | 'past_due' | 'canceled';
+    cancel_at_period_end: boolean;
     balance: number;
+    grant_balance: number;      // credits remaining from monthly plan
+    topup_total: number;        // total topup credits ever purchased
+    topup_remaining: number;    // topup credits still available
     period_end: string | null;
+    current_period_start: string | null;
     daily_caps: CapMap;
     weekly_caps: CapMap | null;
     monthly_credits: number;
+    scheduled_downgrade: string | null;
 }
 
 export interface UsageEvent {
@@ -621,6 +637,12 @@ export const api = {
     getBillingStatus: (): Promise<BillingStatus> => fetchWithAuth('/api/billing/me'),
     getPlans: (): Promise<Plan[]> => fetchWithAuth('/api/billing/plans'),
     getUsage: (): Promise<UsageEvent[]> => fetchWithAuth('/api/billing/usage'),
+    previewPlanChange: (planCode: string): Promise<{
+        type: 'new_subscription' | 'same_plan' | 'upgrade' | 'downgrade';
+        immediate_charge_cents: number | null;
+        next_cycle_date: number | null;
+        next_cycle_charge_cents: number | null;
+    }> => fetchWithAuth(`/api/billing/preview-change?plan_code=${planCode}`),
     createCheckout: (planCode: string): Promise<{ url: string }> =>
         fetchWithAuth('/api/billing/checkout', { method: 'POST', body: JSON.stringify({ plan_code: planCode }) }),
     createPortal: (): Promise<{ url: string }> =>

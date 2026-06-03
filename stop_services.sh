@@ -22,6 +22,9 @@ echo "Cleaning up any remaining processes..."
 # Kill uvicorn processes
 pkill -f "uvicorn api.main:app" 2>/dev/null
 
+# Kill Stripe listener
+pkill -f "stripe listen" 2>/dev/null
+
 # Kill npm/node processes running on port 3000 (Next.js)
 lsof -ti:3000 | xargs kill -9 2>/dev/null
 
@@ -31,4 +34,5 @@ lsof -ti:8000 | xargs kill -9 2>/dev/null
 echo ""
 echo "All services stopped!"
 echo "Backend API: Stopped"
-echo "Frontend: Stopped"  
+echo "Frontend:    Stopped"
+echo "Stripe:      Stopped"

@@ -378,7 +378,7 @@ export default function HomePage() {
 
   const handleGoogleLogin = () => {
     setLoading(true);
-    window.location.href = 'http://localhost:8000/api/auth/google';
+    window.location.href = `${process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000'}/api/auth/google`;
   };
 
   const trustChips = ['Free to start', 'Private by default', '2-minute setup'];

@@ -25,6 +25,37 @@ import instructor
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from engine.usage import Usage, UsageCollector
+
+
+# ─── Input-size guard ─────────────────────────────────────────────────────────
+# Bounds worst-case spend per LLM call. Input tokens are billed (Grok-3 in =
+# $3/1M) and a single task can chain several calls, so an unbounded prompt is a
+# cost-amplification vector (e.g. pasting a multi-MB JD, or 12 large profile
+# files). We approximate tokens as chars/4 and reject prompts over the ceiling
+# BEFORE hitting the provider. Tune via LLM_MAX_INPUT_CHARS (default ~300k chars
+# ≈ 75k tokens ≈ $0.22 of Grok-3 input — generous for any real document set).
+_MAX_INPUT_CHARS = int(os.getenv("LLM_MAX_INPUT_CHARS", "300000"))
+
+
+class InputTooLarge(ValueError):
+    """Raised when an LLM prompt exceeds the configured input ceiling."""
+
+    def __init__(self, chars: int, limit: int):
+        self.chars = chars
+        self.limit = limit
+        super().__init__(
+            f"LLM input too large: {chars} chars exceeds limit of {limit}. "
+            "Reduce the size of the job description or profile documents."
+        )
+
+
+def _guard_input_size(messages: List[Dict[str, str]]) -> None:
+    """Reject oversized prompts before they reach the provider (cost guard)."""
+    total = sum(len(m.get("content", "") or "") for m in messages)
+    if total > _MAX_INPUT_CHARS:
+        raise InputTooLarge(total, _MAX_INPUT_CHARS)
+
 
 # ─── Shared helpers ───────────────────────────────────────────────────────────
 
@@ -109,6 +140,8 @@ class XAIClient:
             OpenAI(base_url=self._BASE_URL, api_key=key, timeout=120.0),
             mode=instructor.Mode.JSON,
         )
+        # Attached by api/llm.get_llm(collector=...). None = no tracking.
+        self.collector: Optional[UsageCollector] = None
 
     def complete(
         self,
@@ -118,7 +151,10 @@ class XAIClient:
         max_tokens: Optional[int] = None,
         max_retries: int = 2,
     ) -> Any:
-        return self._client.chat.completions.create(
+        _guard_input_size(messages)
+        # create_with_completion returns (parsed_model, raw_completion).
+        # raw_completion.usage carries prompt_tokens / completion_tokens.
+        result, completion = self._client.chat.completions.create_with_completion(
             model=self.model,
             response_model=response_model,
             messages=messages,
@@ -127,6 +163,16 @@ class XAIClient:
             max_retries=max_retries,
             strict=False,
         )
+        if self.collector is not None:
+            usage = getattr(completion, "usage", None)
+            if usage is not None:
+                self.collector.add(Usage(
+                    input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+                    output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+                    provider="grok",
+                    model=self.model,
+                ))
+        return result
 
 
 # ─── DeepSeek — plain OpenAI SDK path ────────────────────────────────────────
@@ -158,6 +204,8 @@ class DeepSeekClient:
         self.model = model or os.getenv(self._MODEL_ENV) or self._DEFAULT_MODEL
         # Plain OpenAI client — no instructor wrapper
         self._client = OpenAI(base_url=self._BASE_URL, api_key=key, timeout=120.0)
+        # Attached by api/llm.get_llm(collector=...). None = no tracking.
+        self.collector: Optional[UsageCollector] = None
 
     def complete(
         self,
@@ -167,6 +215,7 @@ class DeepSeekClient:
         max_tokens: Optional[int] = None,
         max_retries: int = 0,  # no silent retries — fail fast and surface the error
     ) -> Any:
+        _guard_input_size(messages)
         # Inject the response model's JSON schema so DeepSeek knows the exact
         # wrapper structure. Without this, it returns inner-model fields flat
         # at the root level instead of the expected {"field": ..., ...} wrapper.
@@ -181,6 +230,15 @@ class DeepSeekClient:
             temperature=temperature,
             max_tokens=min(max_tokens or self._DEFAULT_MAX_TOKENS, self._MAX_OUTPUT_TOKENS),
         )
+        if self.collector is not None:
+            usage = getattr(response, "usage", None)
+            if usage is not None:
+                self.collector.add(Usage(
+                    input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+                    output_tokens=getattr(usage, "completion_tokens", 0) or 0,
+                    provider="deepseek",
+                    model=self.model,
+                ))
         content = response.choices[0].message.content or ""
         content = _extract_json(content)
         return response_model.model_validate_json(content)

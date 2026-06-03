@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useStore } from '@/utils/store';
 import {
     api,
+    isApiError,
     Job,
     JobLensSession,
     type CompanyIntelResult,
@@ -2176,6 +2177,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
     const [savedAt, setSavedAt] = useState<Date | null>(null);
     const [statusDropdownOpen, setStatusDropdownOpen] = useState(false);
     const [profileDocCount, setProfileDocCount] = useState<number | null>(null);
+    const [rateLimitMsg, setRateLimitMsg] = useState<string | null>(null);
 
     useEffect(() => {
         if (!_hasHydrated) return;
@@ -2315,7 +2317,13 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
         try {
             await api.retrySteps(job.id, [stepKey]);
         } catch (err) {
-            console.error('Failed to retry step:', stepKey, err);
+            if (isApiError(err) && err.status === 429) {
+                const secs = err.retryAfter ?? 60;
+                setRateLimitMsg(`Too many requests — try again in ${Math.ceil(secs / 60)} min.`);
+                setTimeout(() => setRateLimitMsg(null), secs * 1000);
+            } else {
+                console.error('Failed to retry step:', stepKey, err);
+            }
             setStepStatuses(prev => ({ ...prev, [stepKey]: 'error' }));
             setStepErrors(prev => ({ ...prev, [stepKey]: 'Failed to start retry.' }));
         }
@@ -2348,7 +2356,13 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
             // Full session load (fills in any data already available)
             await load();
         } catch (err) {
-            console.error('Failed to run JobLens:', err);
+            if (isApiError(err) && err.status === 429) {
+                const secs = err.retryAfter ?? 60;
+                setRateLimitMsg(`Too many requests — try again in ${Math.ceil(secs / 60)} min.`);
+                setTimeout(() => setRateLimitMsg(null), secs * 1000);
+            } else {
+                console.error('Failed to run JobLens:', err);
+            }
         }
     };
 
@@ -2582,6 +2596,17 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                             <p style={{ fontSize: 13, color: 'var(--accent-ink)' }}>
                                 JobLens pipeline is running — results appear as each step completes
                             </p>
+                        </div>
+                    )}
+
+                    {/* Rate limit banner */}
+                    {rateLimitMsg && (
+                        <div style={{
+                            padding: '10px 14px', borderRadius: 'var(--radius-sm)',
+                            background: 'var(--surface-2)', border: '1px solid var(--border)',
+                            fontSize: 13, color: 'var(--text-2)',
+                        }}>
+                            {rateLimitMsg}
                         </div>
                     )}
 

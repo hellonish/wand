@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Any, List, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, Query, File, UploadFile, BackgroundTasks, Request
 from pydantic import BaseModel
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -23,11 +23,14 @@ import engine.inference as inference
 from ..database import SessionLocal, get_db
 from ..auth import get_current_user
 from ..llm import get_llm
+from ..billing.gateway import MeterContext, metered, bg_settle_success, bg_settle_failure
+from engine.usage import UsageCollector
 from ..schemas import (
     JobCreate, JobTrackCreate, JobUpdate, JobResponse, JobListResponse, JobStatusEnum, JobLensSessionResponse,
 )
 from ..models import User, Job, JobLensSession, JobStatus, UserProfile, ProfileFile
 from ..websocket import manager
+from ..limiter import limiter
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +89,10 @@ def _fallback_unified_profile(sources: dict[str, Any]) -> dict[str, Any]:
     return create_unified_profile(type_sources) if type_sources else next(iter(sources.values()))
 
 
-def _get_or_create_unified_profile(user_id: str) -> UnifiedProfile:
+def _get_or_create_unified_profile(
+    user_id: str,
+    collector: Optional[UsageCollector] = None,
+) -> UnifiedProfile:
     """Load the user's unified profile or create/cache it from parsed profile files."""
 
     db = SessionLocal()
@@ -113,7 +119,7 @@ def _get_or_create_unified_profile(user_id: str) -> UnifiedProfile:
             }
             unified, _ = merge_profile_sources(
                 sources,
-                get_llm("profile"),
+                get_llm("profile", collector=collector),
                 global_context=profile.additional_context,
                 per_file_context=per_file_ctx,
             )
@@ -129,10 +135,14 @@ def _get_or_create_unified_profile(user_id: str) -> UnifiedProfile:
         db.close()
 
 
-def _gather_company_intel(job_description: JobDescriptionBreakdownResult, company_website: Optional[str]):
+def _gather_company_intel(
+    job_description: JobDescriptionBreakdownResult,
+    company_website: Optional[str],
+    collector: Optional[UsageCollector] = None,
+):
     """Company intel section: derive lookup handles and collect company intelligence."""
 
-    return CompanyIntelService(llm=get_llm("company_intel")).collect(
+    return CompanyIntelService(llm=get_llm("company_intel", collector=collector)).collect(
         CompanyIntelInput(
             company_name=job_description.breakdown.metadata.company_name,
             website=company_website,
@@ -140,12 +150,16 @@ def _gather_company_intel(job_description: JobDescriptionBreakdownResult, compan
     )
 
 
-def _score_match(profile: Optional[UnifiedProfile], job_description: JobDescriptionBreakdownResult) -> JobMatchScore:
+def _score_match(
+    profile: Optional[UnifiedProfile],
+    job_description: JobDescriptionBreakdownResult,
+    collector: Optional[UsageCollector] = None,
+) -> JobMatchScore:
     """Phase A — score + evidence, no resume actions."""
     if not profile:
         raise ValueError("No unified profile available.")
     from engine.joblens.job_match.models import JobMatchRequest
-    llm = get_llm("job_match")
+    llm = get_llm("job_match", collector=collector)
     request = JobMatchRequest(profile=profile, job_description=job_description)
     response = inference.score_job_match(llm, request)
     from engine.utils import dedupe_warning_strings
@@ -205,12 +219,13 @@ def _generate_actions(
     job_description: JobDescriptionBreakdownResult,
     score: JobMatchScore,
     resume_candidates=None,
+    collector: Optional[UsageCollector] = None,
 ) -> ResumeActions:
     """Phase B — resume actions grounded in Phase A score."""
     if not profile:
         raise ValueError("No unified profile available.")
     from engine.joblens.job_match.models import JobMatchRequest
-    llm = get_llm("job_match")
+    llm = get_llm("job_match", collector=collector)
     request = JobMatchRequest(
         profile=profile,
         job_description=job_description,
@@ -241,6 +256,7 @@ def _discover_reachout(
     profile: UnifiedProfile,
     job_description: JobDescriptionBreakdownResult,
     company_website: Optional[str],
+    collector: Optional[UsageCollector] = None,
 ):
     """Reachout section: derive roles/schools and discover candidate contacts."""
 
@@ -254,7 +270,7 @@ def _discover_reachout(
     target_roles = [role for role in roles if role]
     schools = [item.institution for item in profile.education if item.institution]
 
-    return ReachoutService(llm=get_llm("reachout")).discover(
+    return ReachoutService(llm=get_llm("reachout", collector=collector)).discover(
         ReachoutInput(
             company_name=breakdown.metadata.company_name,
             company_website=company_website,
@@ -362,9 +378,18 @@ async def run_job_analysis_background(
     user_id: str,
     jd_text: str,
     company_website: Optional[str],
+    meter_ref: Optional[str] = None,
+    meter_tracker_keys: Optional[list] = None,
+    meter_charge: bool = True,
 ) -> None:
-    """Run the job analysis flow from profile + parsed job description."""
+    """Run the job analysis flow from profile + parsed job description.
 
+    meter_ref          — the reservation ref from the gateway (None = free/no-charge).
+    meter_tracker_keys — the rate-window keys that were incremented at reservation time,
+                         so we can roll them back on failure.
+    meter_charge       — False for retry-steps (no reservation was made).
+    """
+    collector = UsageCollector()
     profile_snapshot = None
     job_description = None
     company_intel = None
@@ -378,7 +403,9 @@ async def run_job_analysis_background(
         async def run_profile() -> None:
             nonlocal profile_snapshot
             try:
-                profile_snapshot = await asyncio.to_thread(lambda: _get_or_create_unified_profile(user_id))
+                profile_snapshot = await asyncio.to_thread(
+                    lambda: _get_or_create_unified_profile(user_id, collector=collector)
+                )
                 _emit(
                     user_id,
                     session_id,
@@ -412,7 +439,7 @@ async def run_job_analysis_background(
                             return JobDescriptionBreakdownResult.model_validate(cached.job_description)
                     return break_down_job_description(
                         job_text=jd_text,
-                        llm=get_llm("job_description"),
+                        llm=get_llm("job_description", collector=collector),
                         source_id=job_id,
                     )
 
@@ -483,7 +510,9 @@ async def run_job_analysis_background(
         async def run_company_intel():
             _emit(user_id, session_id, job_id, "company_intel", "joblens_step_started")
             try:
-                result = await asyncio.to_thread(lambda: _gather_company_intel(job_description, company_website))
+                result = await asyncio.to_thread(
+                    lambda: _gather_company_intel(job_description, company_website, collector=collector)
+                )
                 _emit(user_id, session_id, job_id, "company_intel", "joblens_step_complete",
                       {"data": _slim_company_intel(result)})
                 return result
@@ -495,7 +524,10 @@ async def run_job_analysis_background(
             _emit(user_id, session_id, job_id, "reachout", "joblens_step_started")
             try:
                 result = await asyncio.to_thread(
-                    lambda: _discover_reachout(profile_snapshot or UnifiedProfile(), job_description, company_website)
+                    lambda: _discover_reachout(
+                        profile_snapshot or UnifiedProfile(), job_description, company_website,
+                        collector=collector,
+                    )
                 )
                 _emit(user_id, session_id, job_id, "reachout", "joblens_step_complete",
                       {"data": _slim_reachout(result)})
@@ -508,7 +540,7 @@ async def run_job_analysis_background(
             run_company_intel(),
             run_parallel_section(
                 "match_analysis",
-                lambda: _score_match(profile_snapshot, job_description),
+                lambda: _score_match(profile_snapshot, job_description, collector=collector),
             ),
             run_reachout(),
         )
@@ -550,7 +582,9 @@ async def run_job_analysis_background(
             _cands = _wave3_candidates
             resume_actions = await run_parallel_section(
                 "resume_actions",
-                lambda: _generate_actions(profile_snapshot, job_description, match_score, _cands),
+                lambda: _generate_actions(
+                    profile_snapshot, job_description, match_score, _cands, collector=collector
+                ),
             )
 
         def save_third_wave(db: Session) -> None:
@@ -568,10 +602,50 @@ async def run_job_analysis_background(
                 job.status = JobStatus.TRACKED
 
         _db_write(save_third_wave)
+
+        # ── Billing: success settle ───────────────────────────────────────────
+        if meter_ref and meter_charge:
+            bg_settle_success(
+                user_id=user_id,
+                task_type="job_analysis",
+                ref=meter_ref,
+                credits_reserved=12,
+                collector=collector,
+            )
+        elif meter_ref:
+            # Free / retry path — still write usage event with credits_charged=0.
+            bg_settle_success(
+                user_id=user_id,
+                task_type="job_analysis",
+                ref=meter_ref,
+                credits_reserved=0,
+                collector=collector,
+            )
+
         _emit(user_id, session_id, job_id, "pipeline", "joblens_pipeline_complete")
 
     except Exception as error:
         logger.exception("Job analysis pipeline error for job %s: %s", job_id, error)
+
+        # ── Billing: failure — refund + roll back rate windows ────────────────
+        if meter_ref and meter_charge:
+            bg_settle_failure(
+                user_id=user_id,
+                task_type="job_analysis",
+                ref=meter_ref,
+                tracker_keys=meter_tracker_keys or [],
+                collector=collector,
+            )
+        elif meter_ref:
+            # Free path — just write the failed usage event (no refund).
+            bg_settle_success(
+                user_id=user_id,
+                task_type="job_analysis",
+                ref=meter_ref,
+                credits_reserved=0,
+                collector=collector,
+            )
+
         def mark_job_tracked(db: Session) -> None:
             job = db.query(Job).filter(Job.id == job_id).first()
             if job and job.status == JobStatus.ANALYZING:
@@ -586,8 +660,11 @@ async def retry_steps_background(
     session_id: str,
     user_id: str,
     steps: List[str],
+    meter_ref: Optional[str] = None,
 ) -> None:
     """Re-run only the specified failed steps using existing session data."""
+
+    collector = UsageCollector()
 
     # Load what we need from the session
     db = SessionLocal()
@@ -658,17 +735,18 @@ async def retry_steps_background(
     async def maybe_run(step: str):
         if step == "company_intel":
             results["company_intel"] = await run_step(
-                step, lambda: _gather_company_intel(job_description, company_website)
+                step, lambda: _gather_company_intel(job_description, company_website, collector=collector)
             )
         elif step == "reachout":
             results["reachout"] = await run_step(
                 step, lambda: _discover_reachout(
-                    profile_snapshot or UnifiedProfile(), job_description, company_website
+                    profile_snapshot or UnifiedProfile(), job_description, company_website,
+                    collector=collector,
                 )
             )
         elif step == "match_analysis":
             results["match_analysis"] = await run_step(
-                step, lambda: _score_match(profile_snapshot, job_description)
+                step, lambda: _score_match(profile_snapshot, job_description, collector=collector)
             )
 
     await asyncio.gather(*[maybe_run(s) for s in independent])
@@ -693,7 +771,9 @@ async def retry_steps_background(
             _rcands = _retry_candidates
             results["resume_actions"] = await run_step(
                 "resume_actions",
-                lambda: _generate_actions(profile_snapshot, job_description, score_for_actions, _rcands)
+                lambda: _generate_actions(
+                    profile_snapshot, job_description, score_for_actions, _rcands, collector=collector
+                )
             )
         else:
             _emit(user_id, session_id, job_id, "resume_actions", "joblens_step_failed",
@@ -719,6 +799,17 @@ async def retry_steps_background(
             row.current_step = max(row.current_step, 6)
 
     _db_write(save_retry)
+
+    # Billing: retry is free — write usage event only for analytics.
+    if meter_ref:
+        bg_settle_success(
+            user_id=user_id,
+            task_type="job_analysis_retry",
+            ref=meter_ref,
+            credits_reserved=0,
+            collector=collector,
+        )
+
     _emit(user_id, session_id, job_id, "pipeline", "joblens_pipeline_complete")
 
 
@@ -753,18 +844,20 @@ def _check_profile_documents(user_id: str, db: Session) -> None:
 
 
 @router.post("", response_model=JobResponse)
+@limiter.limit("10/minute")
 async def create_job(
+    request: Request,
     job_data: JobCreate,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    ctx: MeterContext = Depends(metered("job_analysis", charge=True)),
+    db: Session = Depends(get_db),
 ):
-    """Create a new job and kick off the analysis pipeline."""
-    _check_profile_documents(current_user.id, db)
+    """Create a new job and kick off the analysis pipeline (costs 12 credits)."""
+    _check_profile_documents(ctx.user_id, db)
 
     # Create placeholder job
     job = Job(
-        user_id=current_user.id,
+        user_id=ctx.user_id,
         job_posting={
             "job_title": "Analyzing...",
             "company_name": "Pending",
@@ -778,7 +871,7 @@ async def create_job(
 
     # Create internal analysis session
     session = JobLensSession(
-        user_id=current_user.id,
+        user_id=ctx.user_id,
         job_id=job.id,
         raw_jd_text=job_data.jd_text,
         company_website=job_data.company_website,
@@ -790,11 +883,15 @@ async def create_job(
     db.commit()
     db.refresh(job)
 
-    # Kick off pipeline in background
+    # Pass billing context into the background task.
+    # The task owns settle_success / settle_failure from this point forward.
     background_tasks.add_task(
         run_job_analysis_background,
-        job.id, session.id, current_user.id,
+        job.id, session.id, ctx.user_id,
         job_data.jd_text, job_data.company_website,
+        meter_ref=ctx.ref,
+        meter_tracker_keys=list(ctx._tracker._incremented),
+        meter_charge=ctx.charge,
     )
 
     return job
@@ -942,21 +1039,23 @@ async def delete_job(
 
 
 @router.post("/{job_id}/analyze", response_model=JobResponse)
+@limiter.limit("5/minute")
 async def analyze_job(
+    request: Request,
     job_id: UUID,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    ctx: MeterContext = Depends(metered("job_analysis", charge=True)),
+    db: Session = Depends(get_db),
 ):
-    """(Re-)run the JobLens analysis pipeline for an existing tracked job."""
+    """(Re-)run the JobLens analysis pipeline for an existing tracked job (costs 12 credits)."""
     job = db.query(Job).filter(
         Job.id == str(job_id),
-        Job.user_id == current_user.id,
+        Job.user_id == ctx.user_id,
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    _check_profile_documents(current_user.id, db)
+    _check_profile_documents(ctx.user_id, db)
 
     # Get or create a JobLens session
     session = None
@@ -966,7 +1065,7 @@ async def analyze_job(
     if not session:
         raw_jd = (job.job_posting or {}).get("raw_jd", "") or ""
         session = JobLensSession(
-            user_id=current_user.id,
+            user_id=ctx.user_id,
             job_id=job.id,
             raw_jd_text=raw_jd,
             company_website=job.company_website,
@@ -983,8 +1082,11 @@ async def analyze_job(
 
     background_tasks.add_task(
         run_job_analysis_background,
-        job.id, session.id, current_user.id,
+        job.id, session.id, ctx.user_id,
         jd_text, job.company_website,
+        meter_ref=ctx.ref,
+        meter_tracker_keys=list(ctx._tracker._incremented),
+        meter_charge=ctx.charge,
     )
 
     return job
@@ -995,14 +1097,16 @@ class RetryStepsRequest(BaseModel):
 
 
 @router.post("/{job_id}/retry-steps", response_model=JobLensSessionResponse)
+@limiter.limit("5/minute")
 async def retry_steps(
+    request: Request,
     job_id: UUID,
     body: RetryStepsRequest,
     background_tasks: BackgroundTasks,
-    current_user: User = Depends(get_current_user),
+    ctx: MeterContext = Depends(metered("job_analysis_retry", charge=False)),
     db: Session = Depends(get_db),
 ):
-    """Re-run only specific failed steps for an existing job analysis session."""
+    """Re-run only specific failed steps (free — already paid at initial analysis)."""
     VALID_STEPS = {"company_intel", "match_analysis", "resume_actions", "reachout"}
     requested = [s for s in body.steps if s in VALID_STEPS]
     if not requested:
@@ -1010,7 +1114,7 @@ async def retry_steps(
 
     job = db.query(Job).filter(
         Job.id == str(job_id),
-        Job.user_id == current_user.id,
+        Job.user_id == ctx.user_id,
     ).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -1026,7 +1130,8 @@ async def retry_steps(
 
     background_tasks.add_task(
         retry_steps_background,
-        job.id, session.id, current_user.id, requested,
+        job.id, session.id, ctx.user_id, requested,
+        meter_ref=ctx.ref,
     )
 
     return session
@@ -1056,7 +1161,9 @@ async def track_job(
 
 
 @router.post("/{job_id}/parse-resume")
+@limiter.limit("10/minute")
 async def parse_resume_for_job(
+    request: Request,
     job_id: UUID,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),

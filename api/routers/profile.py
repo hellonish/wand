@@ -7,7 +7,7 @@ import uuid
 import shutil
 import math
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, Request
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -15,6 +15,8 @@ from datetime import datetime
 from ..database import get_db
 from ..auth import get_current_user
 from ..llm import get_llm
+from ..billing.gateway import MeterContext, metered
+from ..limiter import limiter
 from ..schemas import (
     UserProfileResponse,
     ProfileUploadResponse,
@@ -68,22 +70,32 @@ async def get_profile(
 
 
 @router.post("/upload", response_model=ProfileFileUploadResponse)
+@limiter.limit("10/minute")
 async def upload_file(
+    request: Request,
     file: UploadFile = File(...),
     type: str = Form(...),
     additional_context: Optional[str] = Form(None),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    ctx: MeterContext = Depends(metered("profile_upload", charge=False)),
+    db: Session = Depends(get_db),
 ):
-    """Upload and parse a profile file."""
+    """Upload and parse a profile file (free, but daily-capped per plan)."""
     if type not in VALID_FILE_TYPES:
+        ctx.settle_failure()
         raise HTTPException(status_code=400, detail="Invalid file type. Must be one of: resume, linkedin, portfolio, other")
 
     file_ext = os.path.splitext(file.filename)[1].lower() if file.filename else ""
     if file_ext not in ALLOWED_EXTENSIONS:
+        ctx.settle_failure()
         raise HTTPException(status_code=415, detail=f"Unsupported file extension: {file_ext}. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
 
-    user_dir = os.path.join(UPLOAD_DIR, current_user.id)
+    # Hard cap: max 12 active (non-deleted) files per user regardless of plan.
+    active_count = db.query(ProfileFile).filter(ProfileFile.user_id == ctx.user_id).count()
+    if active_count >= 12:
+        ctx.settle_failure()
+        raise HTTPException(status_code=429, detail="Maximum active profile files (12) reached. Delete some before uploading more.")
+
+    user_dir = os.path.join(UPLOAD_DIR, ctx.user_id)
     os.makedirs(user_dir, exist_ok=True)
 
     unique_name = f"{uuid.uuid4().hex}{file_ext}"
@@ -93,6 +105,7 @@ async def upload_file(
     file_size = len(file_content)
 
     if file_size > MAX_FILE_SIZE:
+        ctx.settle_failure()
         raise HTTPException(status_code=413, detail=f"File too large ({file_size} bytes). Max: {MAX_FILE_SIZE // (1024*1024)} MB")
 
     with open(file_path, "wb") as buffer:
@@ -107,15 +120,16 @@ async def upload_file(
                 filename=file.filename or f"profile{file_ext}",
                 content_type=file.content_type or "application/octet-stream",
                 source_label=source_label,
-                llm=get_llm("profile"),
+                llm=get_llm("profile", collector=ctx.collector),
             )
         except Exception as e:
             if os.path.exists(file_path):
                 os.remove(file_path)
+            ctx.settle_failure()
             raise HTTPException(status_code=500, detail=f"Parsing failed: {str(e)}")
 
     profile_file = ProfileFile(
-        user_id=current_user.id,
+        user_id=ctx.user_id,
         filename=file.filename,
         file_path=file_path,
         file_type=type,
@@ -125,20 +139,20 @@ async def upload_file(
     )
     db.add(profile_file)
 
-    _get_or_create_profile(db, current_user.id)
+    _get_or_create_profile(db, ctx.user_id)
 
     if type == "resume":
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        profile = db.query(UserProfile).filter(UserProfile.user_id == ctx.user_id).first()
         if profile and not profile.resume_path:
             profile.resume_path = file_path
             profile.resume_data = parsed_data
     elif type == "linkedin":
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        profile = db.query(UserProfile).filter(UserProfile.user_id == ctx.user_id).first()
         if profile and not profile.linkedin_path:
             profile.linkedin_path = file_path
             profile.linkedin_data = parsed_data
     elif type == "portfolio":
-        profile = db.query(UserProfile).filter(UserProfile.user_id == current_user.id).first()
+        profile = db.query(UserProfile).filter(UserProfile.user_id == ctx.user_id).first()
         if profile and not profile.portfolio_path:
             profile.portfolio_path = file_path
             profile.portfolio_data = parsed_data
@@ -146,6 +160,7 @@ async def upload_file(
     db.commit()
     db.refresh(profile_file)
 
+    ctx.settle_success()
     return ProfileFileUploadResponse(
         id=profile_file.id,
         file_type=type,
@@ -300,15 +315,17 @@ async def get_profile_file_legacy(
 
 
 @router.post("/unified", response_model=UserProfileResponse)
+@limiter.limit("3/minute")
 async def create_unified(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    request: Request,
+    ctx: MeterContext = Depends(metered("profile_build", charge=True)),
+    db: Session = Depends(get_db),
 ):
-    """Create Unified Profile from uploaded files."""
-    profile = _get_or_create_profile(db, current_user.id)
+    """Create Unified Profile from uploaded files (costs 30 credits)."""
+    profile = _get_or_create_profile(db, ctx.user_id)
 
     all_profile_files = db.query(ProfileFile).filter(
-        ProfileFile.user_id == current_user.id
+        ProfileFile.user_id == ctx.user_id
     ).all()
 
     profile_files = [pf for pf in all_profile_files if pf.parsed_data is not None]
@@ -322,9 +339,7 @@ async def create_unified(
         key = f"{ft}_{type_counters[ft]}"
         sources[key] = pf.parsed_data
 
-    legacy_fallback = False
     if not sources:
-        legacy_fallback = True
         for key in ("resume", "linkedin", "portfolio"):
             legacy_val = getattr(profile, f"{key}_data", None)
             if legacy_val:
@@ -338,11 +353,11 @@ async def create_unified(
                     sources[f"{key}_1"] = legacy_val
 
     if not sources:
+        ctx.settle_failure()
         raise HTTPException(status_code=400, detail="No files uploaded to unify")
 
-    llm = None
     try:
-        llm = get_llm("profile")
+        llm = get_llm("profile", collector=ctx.collector)
 
         global_ctx = profile.additional_context
         per_file_ctx = {}
@@ -355,10 +370,19 @@ async def create_unified(
         )
 
         profile.unified_profile = unified
+        profile.extracted_profile = unified
+        db.commit()
+        db.refresh(profile)
+
+        ctx.settle_success()
+        return profile
 
     except Exception as e:
         import logging
         logging.getLogger(__name__).warning(f"Profile unification failed: {e}")
+
+        # Fallback — do not charge for a failed LLM call; still persist non-LLM result.
+        ctx.settle_failure()
 
         if len(sources) == 1:
             unified = list(sources.values())[0]
@@ -375,14 +399,10 @@ async def create_unified(
             unified = create_unified_profile(type_sources) if type_sources else list(sources.values())[0]
 
         profile.unified_profile = unified
-
-    db.commit()
-
-    profile.extracted_profile = unified
-    db.commit()
-
-    db.refresh(profile)
-    return profile
+        profile.extracted_profile = unified
+        db.commit()
+        db.refresh(profile)
+        return profile
 
 
 @router.patch("/additional-context", response_model=UserProfileResponse)

@@ -19,28 +19,27 @@ function Icon({ name, size = 16, stroke = 1.5 }: { name: IconName; size?: number
     strokeLinecap: 'round' as const, strokeLinejoin: 'round' as const,
   };
   switch (name) {
-    case 'dashboard':     return <svg {...common}><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>;
-    case 'briefcase':     return <svg {...common}><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/><path d="M3 13h18"/></svg>;
-    case 'mail':          return <svg {...common}><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>;
-    case 'user':          return <svg {...common}><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/></svg>;
-    case 'sun':           return <svg {...common}><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5"/></svg>;
-    case 'moon':          return <svg {...common}><path d="M20 14.5A8 8 0 1 1 9.5 4a6 6 0 0 0 10.5 10.5z"/></svg>;
-    case 'logout':        return <svg {...common}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>;
-    case 'settings':      return <svg {...common}><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>;
-    case 'sparkles':      return <svg {...common}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2"/></svg>;
-    case 'chevron-left':  return <svg {...common}><path d="M15 18l-6-6 6-6"/></svg>;
-    case 'chevron-right': return <svg {...common}><path d="M9 18l6-6-6-6"/></svg>;
+    case 'dashboard': return <svg {...common}><rect x="3" y="3" width="7" height="9" rx="1" /><rect x="14" y="3" width="7" height="5" rx="1" /><rect x="14" y="12" width="7" height="9" rx="1" /><rect x="3" y="16" width="7" height="5" rx="1" /></svg>;
+    case 'briefcase': return <svg {...common}><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2" /><path d="M3 13h18" /></svg>;
+    case 'mail': return <svg {...common}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 7l9 6 9-6" /></svg>;
+    case 'user': return <svg {...common}><circle cx="12" cy="8" r="4" /><path d="M4 21c0-4 4-7 8-7s8 3 8 7" /></svg>;
+    case 'sun': return <svg {...common}><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5" /></svg>;
+    case 'moon': return <svg {...common}><path d="M20 14.5A8 8 0 1 1 9.5 4a6 6 0 0 0 10.5 10.5z" /></svg>;
+    case 'logout': return <svg {...common}><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="M16 17l5-5-5-5" /><path d="M21 12H9" /></svg>;
+    case 'settings': return <svg {...common}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" /></svg>;
+    case 'sparkles': return <svg {...common}><path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2 2M16 16l2 2M18 6l-2 2M8 16l-2 2" /></svg>;
+    case 'chevron-left': return <svg {...common}><path d="M15 18l-6-6 6-6" /></svg>;
+    case 'chevron-right': return <svg {...common}><path d="M9 18l6-6-6-6" /></svg>;
   }
 }
 
 // ─── Nav config ───────────────────────────────────────────────────────────────
 
 const NAV_LINKS = [
-  { href: '/dashboard',     label: 'Dashboard',     icon: 'dashboard' as IconName },
-  { href: '/jobs',          label: 'Jobs',           icon: 'briefcase' as IconName },
-  { href: '/profile',       label: 'Profile',        icon: 'user'      as IconName },
-  { href: '/cover-letters', label: 'Cover letters',  icon: 'mail'      as IconName },
-  { href: '/billing',       label: 'Billing',        icon: 'sparkles'  as IconName },
+  { href: '/dashboard', label: 'Dashboard', icon: 'dashboard' as IconName },
+  { href: '/jobs', label: 'Jobs', icon: 'briefcase' as IconName },
+  { href: '/profile', label: 'Profile', icon: 'user' as IconName },
+  { href: '/cover-letters', label: 'Cover letters', icon: 'mail' as IconName },
 ];
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -141,61 +140,95 @@ export default function Header() {
               >
                 <Icon name="chevron-right" size={14} />
               </button>
-              {billing && (
-                <button
-                  onClick={() => router.push('/billing')}
-                  title={`${billing.balance} credits`}
-                  style={{
-                    width: '100%', height: 28, display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', borderRadius: 'var(--radius-sm)',
-                    color: 'var(--accent-ink)', background: 'var(--accent-soft)',
-                    border: '1px solid var(--accent-border)', cursor: 'pointer',
-                  }}
-                >
-                  <Icon name="sparkles" size={13} />
-                </button>
-              )}
+              {billing && (() => {
+                const onAdditional = billing.grant_balance === 0 && billing.topup_remaining > 0;
+                const pctLeft = onAdditional
+                  ? Math.max(0, Math.round((billing.topup_remaining / (billing.topup_total || 1)) * 100))
+                  : Math.max(0, Math.round((billing.grant_balance / (billing.monthly_credits || 1)) * 100));
+                const low = !onAdditional && pctLeft < 20;
+                const color = onAdditional ? 'var(--strong)' : low ? 'var(--weak)' : 'var(--accent-ink)';
+                const bg = onAdditional ? 'color-mix(in oklch, var(--strong) 12%, transparent)' : low ? 'var(--weak-soft)' : 'var(--accent-soft)';
+                const title = onAdditional
+                  ? `Additional Usage · ${pctLeft}% of purchased credits remaining`
+                  : `${billing.plan_name} plan · ${pctLeft}% remaining`;
+                return (
+                  <button
+                    onClick={() => router.push('/billing')}
+                    title={title}
+                    style={{
+                      width: '100%', height: 30, display: 'flex', alignItems: 'center',
+                      justifyContent: 'center', borderRadius: 'var(--radius-sm)',
+                      color, background: bg,
+                      border: `1px solid ${low ? 'transparent' : 'var(--border-soft)'}`,
+                      cursor: 'pointer', transition: 'all 140ms ease',
+                    }}
+                  >
+                    <Icon name="sparkles" size={13} />
+                  </button>
+                );
+              })()}
             </>
           ) : (
             /* User card */
             <>
               {/* Credit badge */}
-              {billing && (
-                <button
-                  onClick={() => router.push('/billing')}
-                  title={`${billing.balance} credits — ${billing.plan_name} plan`}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6, height: 28, padding: '0 10px',
-                    borderRadius: 'var(--radius-sm)', background: 'var(--accent-soft)',
-                    color: 'var(--accent-ink)', fontSize: 12, fontWeight: 500,
-                    border: '1px solid var(--accent-border)', cursor: 'pointer', width: '100%',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Icon name="sparkles" size={13} />
-                  {billing.balance} credits
-                </button>
-              )}
+              {billing && (() => {
+                const onAdditional = billing.grant_balance === 0 && billing.topup_remaining > 0;
+                const pctLeft = onAdditional
+                  ? Math.max(0, Math.round((billing.topup_remaining / (billing.topup_total || 1)) * 100))
+                  : Math.max(0, Math.round((billing.grant_balance / (billing.monthly_credits || 1)) * 100));
+                const low = !onAdditional && pctLeft < 20;
+                const color = onAdditional ? 'var(--strong)' : low ? 'var(--weak)' : 'var(--accent-ink)';
+                const bg = onAdditional ? 'color-mix(in oklch, var(--strong) 12%, transparent)' : low ? 'var(--weak-soft)' : 'var(--accent-soft)';
+                const label = onAdditional ? 'Additional Usage' : 'Available Quota';
+                const titleText = onAdditional
+                  ? `Additional Usage · ${pctLeft}% of purchased credits remaining`
+                  : `${billing.plan_name} plan · ${pctLeft}% of this period's quota remaining`;
+                return (
+                  <button
+                    onClick={() => router.push('/billing')}
+                    title={titleText}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 8, height: 30, padding: '0 10px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: bg, color,
+                      border: `1px solid ${low ? 'transparent' : 'var(--border-soft)'}`,
+                      fontSize: 12, fontWeight: 500, cursor: 'pointer', width: '100%',
+                      justifyContent: 'center', transition: 'all 140ms ease',
+                    }}
+                  >
+                    <Icon name="sparkles" size={13} />
+                    <div style={{
+                      flex: 1, maxWidth: 70, height: 5, borderRadius: 999,
+                      background: 'color-mix(in oklch, currentColor 18%, transparent)',
+                      overflow: 'hidden',
+                    }}>
+                      <div style={{ height: '100%', width: `${Math.min(100, pctLeft)}%`, background: 'currentColor', borderRadius: 999 }} />
+                    </div>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{pctLeft}%</span>
+                  </button>
+                );
+              })()}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 6, borderRadius: 'var(--radius-sm)' }}>
-              <UserAvatar name={user?.name} picture={user?.profile_picture} size={26} style={{ fontSize: 11 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.name || 'User'}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.email}</div>
+                <UserAvatar name={user?.name} picture={user?.profile_picture} size={26} style={{ fontSize: 11 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.name || 'User'}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-3)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{user?.email}</div>
+                </div>
+                <button
+                  title="Settings"
+                  onClick={() => router.push('/settings')}
+                  style={{
+                    width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                    borderRadius: 'var(--radius-sm)', color: pathname === '/settings' ? 'var(--text)' : 'var(--text-3)',
+                    transition: 'color 140ms',
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text)'; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = pathname === '/settings' ? 'var(--text)' : 'var(--text-3)'; }}
+                >
+                  <Icon name="settings" size={13} />
+                </button>
               </div>
-              <button
-                title="Settings"
-                onClick={() => router.push('/settings')}
-                style={{
-                  width: 26, height: 26, display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                  borderRadius: 'var(--radius-sm)', color: pathname === '/settings' ? 'var(--text)' : 'var(--text-3)',
-                  transition: 'color 140ms',
-                }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text)'; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = pathname === '/settings' ? 'var(--text)' : 'var(--text-3)'; }}
-              >
-                <Icon name="settings" size={13} />
-              </button>
-            </div>
             </>
           )}
         </div>
@@ -224,21 +257,32 @@ export default function Header() {
               </button>
             );
           })}
-          {billing && (
-            <button
-              onClick={() => router.push('/billing')}
-              title={`${billing.balance} credits`}
-              style={{
-                display: 'flex', alignItems: 'center', gap: 4, height: 28, padding: '0 8px',
-                borderRadius: 'var(--radius-sm)', background: 'var(--accent-soft)',
-                color: 'var(--accent-ink)', fontSize: 11.5, fontWeight: 500,
-                border: '1px solid var(--accent-border)', cursor: 'pointer',
-              }}
-            >
-              <Icon name="sparkles" size={12} />
-              {billing.balance}
-            </button>
-          )}
+          {billing && (() => {
+            const onAdditional = billing.grant_balance === 0 && billing.topup_remaining > 0;
+            const pctLeft = onAdditional
+              ? Math.max(0, Math.round((billing.topup_remaining / (billing.topup_total || 1)) * 100))
+              : Math.max(0, Math.round((billing.grant_balance / (billing.monthly_credits || 1)) * 100));
+            const low = !onAdditional && pctLeft < 20;
+            const color = onAdditional ? 'var(--strong)' : low ? 'var(--weak)' : 'var(--accent-ink)';
+            const bg = onAdditional ? 'color-mix(in oklch, var(--strong) 12%, transparent)' : low ? 'var(--weak-soft)' : 'var(--accent-soft)';
+            return (
+              <button
+                onClick={() => router.push('/billing')}
+                title={onAdditional ? `Additional Usage · ${pctLeft}% left` : `${billing.plan_name} · ${pctLeft}% remaining`}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 4, height: 28, padding: '0 8px',
+                  borderRadius: 'var(--radius-sm)',
+                  background: bg, color,
+                  fontSize: 11.5, fontWeight: 500,
+                  border: `1px solid ${low ? 'transparent' : 'var(--border-soft)'}`,
+                  cursor: 'pointer', transition: 'all 140ms ease',
+                }}
+              >
+                <Icon name="sparkles" size={12} />
+                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{pctLeft}%</span>
+              </button>
+            );
+          })()}
           <button onClick={toggleTheme} className="flex h-8 w-8 items-center justify-center" style={{ borderRadius: 'var(--radius-sm)', color: 'var(--text-2)' }}>
             <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} />
           </button>

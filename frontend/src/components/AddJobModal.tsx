@@ -110,7 +110,7 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
             } else if (isApiError(error) && error.status === 402) {
                 setUpgrade({ open: true, kind: 'credits', needed: error.body?.needed, balance: error.body?.balance });
             } else if (isApiError(error) && error.status === 429) {
-                setUpgrade({ open: true, kind: 'rate_limit', retryAfter: error.body?.retry_after });
+                setUpgrade({ open: true, kind: 'rate_limit', retryAfter: error.retryAfter ?? error.body?.retry_after });
             } else {
                 const code = (error as Error & { code?: string }).code;
                 if (code) {
@@ -140,7 +140,11 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
             onClose();
             onJobTracked?.();
         } catch (error) {
-            console.error('Failed to track job:', error);
+            if (isApiError(error) && error.status === 429) {
+                setUpgrade({ open: true, kind: 'rate_limit', retryAfter: error.retryAfter ?? error.body?.retry_after });
+            } else {
+                console.error('Failed to track job:', error);
+            }
         } finally {
             setIsCreating(false);
         }

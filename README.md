@@ -28,10 +28,15 @@ The backend REST API built with **FastAPI**.
 
 ### 3. Engine (`/engine`)
 The intelligence core of the application.
-- **Tech Stack**: Python, Inspector (Structured Output), PyMuPDF.
-- **AI Models**:
-    - **Gemini 2.5 Pro**: Used for complex reasoning (Qualification Validation, Cover Letter Writing).
-    - **Gemini 2.5 Flash**: Used for high-speed tasks (Parsing, Formatting Checks, Keyword Matching).
+- **Tech Stack**: Python, `instructor` (Structured Output), PyMuPDF.
+- **AI Models** — the engine is **provider-agnostic**. All inference flows through a single client
+  interface (`engine/providers.py`) and per-task model routing (`api/llm.py`). Swapping providers is a
+  config change, no code change:
+    - **xAI Grok** (`grok-3`, default): structured output via `instructor` JSON mode. Used for all tasks
+      out of the box (reasoning + extraction).
+    - **DeepSeek** (`deepseek-chat`): OpenAI-compatible JSON-mode path. A cheaper alternative; can be
+      routed per task (e.g. parsing/extraction) to cut cost.
+    - Any OpenAI-compatible provider can be added as a subclass with its base URL and env vars.
 - **Modules**:
     - `job/parser`: Extracts structured job data.
     - `analysis/qualification_check`: validatates resume claims against requirements.
@@ -43,7 +48,7 @@ The intelligence core of the application.
 ### Prerequisites
 - Python 3.10+
 - Node.js 18+
-- Google Gemini API Key
+- An LLM provider API key — **xAI (`XAI_API_KEY`)** by default, or **DeepSeek (`DEEPSEEK_API_KEY`)**
 
 ### Backend Setup
 1. Navigate to root directory.
@@ -58,8 +63,17 @@ The intelligence core of the application.
    ```
 4. Set environment variables in `.env`:
    ```env
-   GEMINI_API_KEY=your_key_here
+   # Default provider (xAI Grok)
+   XAI_API_KEY=your_key_here
+   # Optional: override the default model
+   XAI_MODEL=grok-3
+
+   # Optional alternative provider (DeepSeek)
+   DEEPSEEK_API_KEY=your_key_here
+   DEEPSEEK_MODEL=deepseek-chat
    ```
+   Provider/model routing per task is controlled by `api/llm_config.json` (see `api/llm.py`).
+   API keys are read from the environment only — never stored in app or user config.
 5. Start the server:
    ```bash
    uvicorn api.main:app --reload
@@ -81,9 +95,16 @@ The intelligence core of the application.
 
 ## 🧠 AI Model Configuration
 
-The system uses a hybrid model approach for optimal performance:
-- **Gemini 2.5 Pro**: used for logic-heavy tasks requiring "reasoning" capabilities.
-- **Gemini 2.5 Flash**: Used for speed-critical extraction and matching tasks.
+The engine is **provider-agnostic**. Every inference call is registered in `engine/inference.py`
+with an explicit token budget, and the model/provider for each task is resolved at runtime by
+`api/llm.py` from `api/llm_config.json`:
+
+- **Default**: every task routes to **xAI `grok-3`**.
+- **Per-task routing**: each task family (`profile`, `job_description`, `company_intel`, `job_match`,
+  `reachout`, `cover_letter`, `cover_letter_tone`) can point at a different provider/model. For example,
+  route high-volume extraction tasks to **DeepSeek** to cut cost while keeping `grok-3` for the
+  user-facing cover letter.
+- **Adding a provider**: subclass in `engine/providers.py` with its base URL + env-var names.
 
 ## 📄 License
 MIT

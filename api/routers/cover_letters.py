@@ -2,7 +2,7 @@
 
 from typing import List
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -13,6 +13,8 @@ from ..schemas import (
 )
 from ..models import User, Job, CoverLetter, UserProfile
 from ..llm import get_llm
+from ..billing.gateway import MeterContext, metered
+from ..limiter import limiter
 from engine.joblens.company_intel import CompanyIntelInput, CompanyIntelService
 from engine.joblens.job_description import break_down_job_description
 
@@ -41,20 +43,22 @@ def _parse_jd_text(jd_text: str, llm, company_name: str = None) -> dict:
 
 
 @router.post("/analyze-jd", response_model=JDToneAnalysisResponse)
+@limiter.limit("10/minute")
 async def analyze_jd(
+    request: Request,
     data: CoverLetterCreate,
-    current_user: User = Depends(get_current_user),
+    ctx: MeterContext = Depends(metered("cover_letter_tone", charge=False)),
     db: Session = Depends(get_db),
 ):
     """Analyze a job description and recommend the best cover letter mode."""
     from engine.cover_letter import CoverLetterService
 
-    llm = get_llm("cover_letter_tone")
+    llm = get_llm("cover_letter_tone", collector=ctx.collector)
     job_posting = {}
     if data.job_id:
         job = db.query(Job).filter(
             Job.id == str(data.job_id),
-            Job.user_id == current_user.id,
+            Job.user_id == ctx.user_id,
         ).first()
         if job:
             job_posting = job.job_posting
@@ -62,37 +66,45 @@ async def analyze_jd(
         job_posting = _parse_jd_text(data.jd_text, llm, data.company_name)
 
     if not job_posting:
+        ctx.settle_failure()
         raise HTTPException(status_code=400, detail="Job posting required for JD analysis")
 
-    result = CoverLetterService(llm)._analyze_jd_tone(job_posting)
-    return JDToneAnalysisResponse(
-        recommended_mode=result.recommended_mode,
-        confidence=result.confidence,
-        tone_signals=result.tone_signals,
-        culture_indicators=result.culture_indicators,
-        formality_level=result.formality_level,
-        industry=result.industry,
-        reasoning=result.reasoning,
-    )
+    try:
+        result = CoverLetterService(llm)._analyze_jd_tone(job_posting)
+        ctx.settle_success()
+        return JDToneAnalysisResponse(
+            recommended_mode=result.recommended_mode,
+            confidence=result.confidence,
+            tone_signals=result.tone_signals,
+            culture_indicators=result.culture_indicators,
+            formality_level=result.formality_level,
+            industry=result.industry,
+            reasoning=result.reasoning,
+        )
+    except Exception:
+        ctx.settle_failure()
+        raise
 
 
 @router.post("", response_model=CoverLetterResponse)
+@limiter.limit("5/minute")
 async def create_cover_letter(
+    request: Request,
     data: CoverLetterCreate,
-    current_user: User = Depends(get_current_user),
+    ctx: MeterContext = Depends(metered("cover_letter", charge=True)),
     db: Session = Depends(get_db),
 ):
-    """Generate a cover letter."""
+    """Generate a cover letter (costs 4 credits)."""
     from engine.cover_letter import generate_cover_letter
 
-    llm = get_llm("cover_letter")
+    llm = get_llm("cover_letter", collector=ctx.collector)
     job = None
     job_posting = {}
 
     if data.job_id:
         job = db.query(Job).filter(
             Job.id == str(data.job_id),
-            Job.user_id == current_user.id,
+            Job.user_id == ctx.user_id,
         ).first()
         if job:
             job_posting = job.job_posting
@@ -100,55 +112,62 @@ async def create_cover_letter(
         job_posting = _parse_jd_text(data.jd_text, llm, data.company_name)
 
     if not job_posting:
+        ctx.settle_failure()
         raise HTTPException(
             status_code=400,
             detail="Provide either job_id or jd_text to generate a cover letter.",
         )
 
-    profile = db.query(UserProfile).filter(
-        UserProfile.user_id == current_user.id,
-    ).first()
-    unified_profile = profile.unified_profile if profile else {}
+    try:
+        profile = db.query(UserProfile).filter(
+            UserProfile.user_id == ctx.user_id,
+        ).first()
+        unified_profile = profile.unified_profile if profile else {}
 
-    company_intel = None
-    if data.include_news and job_posting.get("company_name"):
-        try:
-            intel = CompanyIntelService(llm=llm).collect(
-                CompanyIntelInput(
-                    company_name=job_posting["company_name"],
-                    website=job.company_website if job else None,
-                    max_pages=4,
+        company_intel = None
+        if data.include_news and job_posting.get("company_name"):
+            try:
+                intel = CompanyIntelService(llm=llm).collect(
+                    CompanyIntelInput(
+                        company_name=job_posting["company_name"],
+                        website=job.company_website if job else None,
+                        max_pages=4,
+                    )
                 )
-            )
-            company_intel = intel.model_dump_json()
-        except Exception:
-            company_intel = None
+                company_intel = intel.model_dump_json()
+            except Exception:
+                company_intel = None
 
-    result = generate_cover_letter(
-        job_posting=job_posting,
-        unified_profile=unified_profile,
-        llm=llm,
-        mode=data.mode.value,
-        custom_prompt=data.custom_prompt,
-        company_intel=company_intel,
-    )
+        result = generate_cover_letter(
+            job_posting=job_posting,
+            unified_profile=unified_profile,
+            llm=llm,
+            mode=data.mode.value,
+            custom_prompt=data.custom_prompt,
+            company_intel=company_intel,
+        )
 
-    result_dict = result.model_dump()
-    result_dict["job_title"] = job_posting.get("job_title", "")
-    result_dict["company_name"] = job_posting.get("company_name", "")
+        result_dict = result.model_dump()
+        result_dict["job_title"] = job_posting.get("job_title", "")
+        result_dict["company_name"] = job_posting.get("company_name", "")
 
-    cover_letter = CoverLetter(
-        user_id=current_user.id,
-        job_id=str(data.job_id) if data.job_id else None,
-        mode=data.mode.value,
-        content=result_dict,
-        custom_prompt=data.custom_prompt,
-    )
-    db.add(cover_letter)
-    db.commit()
-    db.refresh(cover_letter)
+        cover_letter = CoverLetter(
+            user_id=ctx.user_id,
+            job_id=str(data.job_id) if data.job_id else None,
+            mode=data.mode.value,
+            content=result_dict,
+            custom_prompt=data.custom_prompt,
+        )
+        db.add(cover_letter)
+        db.commit()
+        db.refresh(cover_letter)
 
-    return cover_letter
+        ctx.settle_success()
+        return cover_letter
+
+    except Exception:
+        ctx.settle_failure()
+        raise
 
 
 @router.get("", response_model=List[CoverLetterResponse])
