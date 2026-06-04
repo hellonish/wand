@@ -36,8 +36,8 @@ def _clear_google_oauth_state(request: Request) -> None:
 async def google_login(request: Request):
     """Redirect to Google OAuth."""
     _clear_google_oauth_state(request)
-    # Use explicit redirect URI to match Google Console config
-    redirect_uri = "http://localhost:8000/api/auth/google/callback"
+    backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+    redirect_uri = f"{backend_url}/api/auth/google/callback"
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
 

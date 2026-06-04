@@ -57,10 +57,12 @@ app.add_middleware(
     secret_key=os.getenv("JWT_SECRET_KEY", "change-me-in-production")
 )
 
-# CORS
+# CORS — set ALLOWED_ORIGINS env var as comma-separated list in production
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000")
+_allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Update for production
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

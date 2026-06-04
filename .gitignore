@@ -72,3 +72,21 @@ shipday_phase*.json
 *.tmp
 *.bak
 .gstack/
+
+# SQLite database files (local dev only — prod uses PostgreSQL)
+*.db
+*.db-shm
+*.db-wal
+
+# Process/pid tracking
+.pids
+
+# Benchmarks
+.benchmarks/
+
+# Claude Code agent worktrees (managed by Claude Code, not for version control)
+.claude/worktrees/
+
+# Next.js build output
+frontend/.next/
+frontend/node_modules/
