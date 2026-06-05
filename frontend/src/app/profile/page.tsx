@@ -7,7 +7,6 @@ import { api, UserProfile, ProfileFileListResponse, type ProfileFileType, isApiE
 import Header from '@/components/Header';
 import { usePageUnloadWarning } from '@/hooks/usePageUnloadWarning';
 import ConfirmationModal from '@/components/ConfirmationModal';
-import UpgradePrompt, { type UpgradePromptState } from '@/components/UpgradePrompt';
 import DataViewerModal from '@/components/DataViewerModal';
 import UnifiedProfileView from '@/components/UnifiedProfileView';
 import ManageDocumentsPanel from '@/components/ManageDocumentsPanel';
@@ -88,7 +87,6 @@ function ProfilePageInner() {
 
     const [fileListData, setFileListData] = useState<ProfileFileListResponse | null>(null);
 
-    const [upgrade, setUpgrade] = useState<UpgradePromptState>({ open: false, kind: 'credits' });
     const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean; fileId: string | null; filename: string }>({
         isOpen: false, fileId: null, filename: ''
     });
@@ -186,16 +184,9 @@ function ProfilePageInner() {
         try {
             await api.createUnifiedProfile();
             await loadProfile();
-            useStore.getState().fetchBilling();
         } catch (err) {
-            if (isApiError(err) && err.status === 402 && err.body?.portal_url) {
-                setUpgrade({ open: true, kind: 'past_due' });
-            } else if (isApiError(err) && err.status === 402) {
-                setUpgrade({ open: true, kind: 'credits', needed: err.body?.needed, balance: err.body?.balance });
-            } else if (isApiError(err) && err.status === 429) {
-                setUpgrade({ open: true, kind: 'rate_limit', retryAfter: err.retryAfter ?? err.body?.retry_after });
-            } else {
-                alert('Failed to create Unified Profile');
+            if (isApiError(err)) {
+                console.error("API error:", err.message);
             }
         } finally {
             setUnifying(false);
@@ -311,11 +302,6 @@ function ProfilePageInner() {
                         onDelete={handleDeleteFile}
                         onEdit={handleEditFile}
                         onPreview={handlePreview}
-                        additionalContext={additionalContext}
-                        onContextChange={setAdditionalContext}
-                        onSaveContext={handleSaveContext}
-                        savingContext={savingContext}
-                        contextSaved={contextSaved}
                     />
                 ) : (
                     <>
@@ -428,7 +414,6 @@ function ProfilePageInner() {
                 data={dataModal.data}
             />
 
-            <UpgradePrompt {...upgrade} onClose={() => setUpgrade(s => ({ ...s, open: false }))} />
         </main>
     );
 }

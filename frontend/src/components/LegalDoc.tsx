@@ -96,10 +96,8 @@ export function LegalPage({
                         fontSize: 14,
                     }}
                 >
-                    <LegalNavLink href="/contact">Contact</LegalNavLink>
                     <LegalNavLink href="/terms">Terms of Service</LegalNavLink>
                     <LegalNavLink href="/privacy">Privacy Policy</LegalNavLink>
-                    <LegalNavLink href="/refunds">Refund Policy</LegalNavLink>
                 </nav>
             </article>
         </main>

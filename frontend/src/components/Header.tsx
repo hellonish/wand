@@ -47,7 +47,7 @@ const NAV_LINKS = [
 export default function Header() {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, theme, toggleTheme, billing } = useStore();
+  const { user, theme, toggleTheme } = useStore();
   const [collapsed, setCollapsed] = useState(false);
 
   return (
@@ -140,75 +140,10 @@ export default function Header() {
               >
                 <Icon name="chevron-right" size={14} />
               </button>
-              {billing && (() => {
-                const onAdditional = billing.grant_balance === 0 && billing.topup_remaining > 0;
-                const pctLeft = onAdditional
-                  ? Math.max(0, Math.round((billing.topup_remaining / (billing.topup_total || 1)) * 100))
-                  : Math.max(0, Math.round((billing.grant_balance / (billing.monthly_credits || 1)) * 100));
-                const low = !onAdditional && pctLeft < 20;
-                const color = onAdditional ? 'var(--strong)' : low ? 'var(--weak)' : 'var(--accent-ink)';
-                const bg = onAdditional ? 'color-mix(in oklch, var(--strong) 12%, transparent)' : low ? 'var(--weak-soft)' : 'var(--accent-soft)';
-                const title = onAdditional
-                  ? `Additional Usage · ${pctLeft}% of purchased credits remaining`
-                  : `${billing.plan_name} plan · ${pctLeft}% remaining`;
-                return (
-                  <button
-                    onClick={() => router.push('/billing')}
-                    title={title}
-                    style={{
-                      width: '100%', height: 30, display: 'flex', alignItems: 'center',
-                      justifyContent: 'center', borderRadius: 'var(--radius-sm)',
-                      color, background: bg,
-                      border: `1px solid ${low ? 'transparent' : 'var(--border-soft)'}`,
-                      cursor: 'pointer', transition: 'all 140ms ease',
-                    }}
-                  >
-                    <Icon name="sparkles" size={13} />
-                  </button>
-                );
-              })()}
             </>
           ) : (
             /* User card */
             <>
-              {/* Credit badge */}
-              {billing && (() => {
-                const onAdditional = billing.grant_balance === 0 && billing.topup_remaining > 0;
-                const pctLeft = onAdditional
-                  ? Math.max(0, Math.round((billing.topup_remaining / (billing.topup_total || 1)) * 100))
-                  : Math.max(0, Math.round((billing.grant_balance / (billing.monthly_credits || 1)) * 100));
-                const low = !onAdditional && pctLeft < 20;
-                const color = onAdditional ? 'var(--strong)' : low ? 'var(--weak)' : 'var(--accent-ink)';
-                const bg = onAdditional ? 'color-mix(in oklch, var(--strong) 12%, transparent)' : low ? 'var(--weak-soft)' : 'var(--accent-soft)';
-                const label = onAdditional ? 'Additional Usage' : 'Available Quota';
-                const titleText = onAdditional
-                  ? `Additional Usage · ${pctLeft}% of purchased credits remaining`
-                  : `${billing.plan_name} plan · ${pctLeft}% of this period's quota remaining`;
-                return (
-                  <button
-                    onClick={() => router.push('/billing')}
-                    title={titleText}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8, height: 30, padding: '0 10px',
-                      borderRadius: 'var(--radius-sm)',
-                      background: bg, color,
-                      border: `1px solid ${low ? 'transparent' : 'var(--border-soft)'}`,
-                      fontSize: 12, fontWeight: 500, cursor: 'pointer', width: '100%',
-                      justifyContent: 'center', transition: 'all 140ms ease',
-                    }}
-                  >
-                    <Icon name="sparkles" size={13} />
-                    <div style={{
-                      flex: 1, maxWidth: 70, height: 5, borderRadius: 999,
-                      background: 'color-mix(in oklch, currentColor 18%, transparent)',
-                      overflow: 'hidden',
-                    }}>
-                      <div style={{ height: '100%', width: `${Math.min(100, pctLeft)}%`, background: 'currentColor', borderRadius: 999 }} />
-                    </div>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{pctLeft}%</span>
-                  </button>
-                );
-              })()}
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 6, borderRadius: 'var(--radius-sm)' }}>
                 <UserAvatar name={user?.name} picture={user?.profile_picture} size={26} style={{ fontSize: 11 }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -257,32 +192,6 @@ export default function Header() {
               </button>
             );
           })}
-          {billing && (() => {
-            const onAdditional = billing.grant_balance === 0 && billing.topup_remaining > 0;
-            const pctLeft = onAdditional
-              ? Math.max(0, Math.round((billing.topup_remaining / (billing.topup_total || 1)) * 100))
-              : Math.max(0, Math.round((billing.grant_balance / (billing.monthly_credits || 1)) * 100));
-            const low = !onAdditional && pctLeft < 20;
-            const color = onAdditional ? 'var(--strong)' : low ? 'var(--weak)' : 'var(--accent-ink)';
-            const bg = onAdditional ? 'color-mix(in oklch, var(--strong) 12%, transparent)' : low ? 'var(--weak-soft)' : 'var(--accent-soft)';
-            return (
-              <button
-                onClick={() => router.push('/billing')}
-                title={onAdditional ? `Additional Usage · ${pctLeft}% left` : `${billing.plan_name} · ${pctLeft}% remaining`}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 4, height: 28, padding: '0 8px',
-                  borderRadius: 'var(--radius-sm)',
-                  background: bg, color,
-                  fontSize: 11.5, fontWeight: 500,
-                  border: `1px solid ${low ? 'transparent' : 'var(--border-soft)'}`,
-                  cursor: 'pointer', transition: 'all 140ms ease',
-                }}
-              >
-                <Icon name="sparkles" size={12} />
-                <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{pctLeft}%</span>
-              </button>
-            );
-          })()}
           <button onClick={toggleTheme} className="flex h-8 w-8 items-center justify-center" style={{ borderRadius: 'var(--radius-sm)', color: 'var(--text-2)' }}>
             <Icon name={theme === 'dark' ? 'sun' : 'moon'} size={15} />
           </button>

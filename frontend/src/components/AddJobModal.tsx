@@ -6,7 +6,6 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { api, JobTrackCreate, type JobStatus, isApiError } from '@/utils/api';
 import { useStore } from '@/utils/store';
-import UpgradePrompt, { type UpgradePromptState } from '@/components/UpgradePrompt';
 
 /** Status options for the Track mode dropdown. */
 const STATUS_OPTIONS = ['tracked', 'applied', 'interview', 'offer', 'rejected', 'archived'] as const;
@@ -63,7 +62,6 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
     const [isCreating, setIsCreating] = useState(false);
 
     // Upgrade prompt
-    const [upgrade, setUpgrade] = useState<UpgradePromptState>({ open: false, kind: 'credits' });
 
     // SSR mount effect
     useEffect(() => { setMounted(true); return () => setMounted(false); }, []);
@@ -108,21 +106,16 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
             resetForm();
             onClose();
             onJobCreated?.(newJob.id);
-            useStore.getState().fetchBilling();
         } catch (error) {
-            if (isApiError(error) && error.status === 402 && error.body?.portal_url) {
-                setUpgrade({ open: true, kind: 'past_due' });
-            } else if (isApiError(error) && error.status === 402) {
-                setUpgrade({ open: true, kind: 'credits', needed: error.body?.needed, balance: error.body?.balance });
-            } else if (isApiError(error) && error.status === 429) {
-                setUpgrade({ open: true, kind: 'rate_limit', retryAfter: error.retryAfter ?? error.body?.retry_after });
-            } else {
-                const code = (error as Error & { code?: string }).code;
+            if (isApiError(error)) {
+                const code = error.body?.code;
                 if (code) {
                     setErrorCode(code);
                 } else {
                     console.error('Failed to create job:', error);
                 }
+            } else {
+                console.error('Failed to create job:', error);
             }
         } finally {
             setIsCreating(false);
@@ -146,7 +139,6 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
             onJobTracked?.();
         } catch (error) {
             if (isApiError(error) && error.status === 429) {
-                setUpgrade({ open: true, kind: 'rate_limit', retryAfter: error.retryAfter ?? error.body?.retry_after });
             } else {
                 console.error('Failed to track job:', error);
             }
@@ -545,7 +537,6 @@ export default function AddJobModal({ isOpen, onClose, onJobCreated, onJobTracke
         </AnimatePresence>,
         document.body,
         )}
-        <UpgradePrompt {...upgrade} onClose={() => setUpgrade(s => ({ ...s, open: false }))} />
         </>
     );
 }

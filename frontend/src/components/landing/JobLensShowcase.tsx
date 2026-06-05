@@ -194,7 +194,7 @@ export default function JobLensShowcase() {
         </div>
 
         <p style={{ marginTop: 40, fontFamily: fontBody, fontSize: 13, color: BRUTAL.ink3 }}>
-          Free plan · no card
+          Completely free · no card
         </p>
       </div>
 

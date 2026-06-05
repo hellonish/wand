@@ -9,7 +9,6 @@ import LandingHero from '@/components/landing/LandingHero';
 import JobLensShowcase from '@/components/landing/JobLensShowcase';
 import FeatureGrid from '@/components/landing/FeatureGrid';
 import HowItWorks from '@/components/landing/HowItWorks';
-import PricingSection from '@/components/landing/PricingSection';
 import LandingCTA from '@/components/landing/LandingCTA';
 import LandingFooter from '@/components/landing/LandingFooter';
 import { LANDING_ROOT_STYLE, SectionRule } from '@/components/landing/brutal';
@@ -51,8 +50,6 @@ export default function HomePage() {
         <FeatureGrid />
         <SectionRule />
         <HowItWorks />
-        <SectionRule />
-        <PricingSection onGoogleLogin={handleGoogleLogin} />
         <SectionRule />
         <LandingCTA onGoogleLogin={handleGoogleLogin} />
       </main>

@@ -7,7 +7,6 @@ import { api, CoverLetter, JDToneAnalysis, isApiError } from '@/utils/api';
 import Header from '@/components/Header';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
-import UpgradePrompt, { type UpgradePromptState } from '@/components/UpgradePrompt';
 
 const MODES = [
     { id: 'auto', label: 'Auto-Detect', desc: 'Hopper reads the job description and selects the tone that best fits this role.' },
@@ -24,7 +23,6 @@ function QuickCoverLetterContent() {
 
     const viewLetterId = searchParams.get('view');
 
-    const [upgrade, setUpgrade] = useState<UpgradePromptState>({ open: false, kind: 'credits' });
 
     const [jdText, setJdText] = useState('');
     const [companyName, setCompanyName] = useState('');
@@ -132,16 +130,9 @@ function QuickCoverLetterContent() {
             });
             setHistory(prev => [result, ...prev]);
             setCoverLetter(result);
-            useStore.getState().fetchBilling();
         } catch (err) {
-            if (isApiError(err) && err.status === 402 && err.body?.portal_url) {
-                setUpgrade({ open: true, kind: 'past_due' });
-            } else if (isApiError(err) && err.status === 402) {
-                setUpgrade({ open: true, kind: 'credits', needed: err.body?.needed, balance: err.body?.balance });
-            } else if (isApiError(err) && err.status === 429) {
-                setUpgrade({ open: true, kind: 'rate_limit', retryAfter: err.retryAfter ?? err.body?.retry_after });
-            } else {
-                alert('Failed to generate cover letter');
+            if (isApiError(err)) {
+                console.error("API error:", err.message);
             }
         } finally {
             setGenerating(false);
@@ -482,7 +473,6 @@ function QuickCoverLetterContent() {
                     </div>
                 </div>
             </div>
-            <UpgradePrompt {...upgrade} onClose={() => setUpgrade(s => ({ ...s, open: false }))} />
         </main>
     );
 }

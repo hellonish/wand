@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { User, api, setToken, clearToken, type ProfileFileType, type BillingStatus } from './api';
+import { User, api, setToken, clearToken, type ProfileFileType } from './api';
 import { uploadFileXHR } from './uploadUtils';
 
 // ─── Upload queue ──────────────────────────────────────────────────────────────
@@ -54,9 +54,6 @@ interface AppState {
     enqueueUploads: (items: UploadInput[]) => void;
     clearCompletedUploads: () => void;
 
-    // Billing
-    billing: BillingStatus | null;
-    fetchBilling: () => Promise<void>;
 }
 
 export const useStore = create<AppState>()(
@@ -72,7 +69,6 @@ export const useStore = create<AppState>()(
             onboardingComplete: false,
             uploadQueue: [],
             uploadCompletedAt: null,
-            billing: null,
 
             setHasHydrated: (state: boolean) => {
                 set({ _hasHydrated: state });
@@ -160,14 +156,6 @@ export const useStore = create<AppState>()(
                 }));
             },
 
-            fetchBilling: async () => {
-                try {
-                    const billing = await api.getBillingStatus();
-                    set({ billing });
-                } catch {
-                    /* not fatal — user may not be logged in yet */
-                }
-            },
         }),
         {
             name: 'wand-storage',

@@ -13,7 +13,7 @@ export default function LandingCTA({ onGoogleLogin }: { onGoogleLogin: () => voi
   const inView = useInView(ref, { once: true, margin: '-80px' });
 
   return (
-    <section style={{ background: BRUTAL.paper2, padding: SECTION_PAD, position: 'relative', overflow: 'hidden' }}>
+    <section id="get-started" style={{ background: BRUTAL.paper2, padding: SECTION_PAD, position: 'relative', overflow: 'hidden' }}>
       <div
         aria-hidden
         className="cta-knight"
@@ -69,7 +69,7 @@ export default function LandingCTA({ onGoogleLogin }: { onGoogleLogin: () => voi
             Your next application deserves better than guessing.
           </h2>
           <p style={{ fontFamily: fontBody, fontSize: 16, color: BRUTAL.ink2, margin: 0, lineHeight: 1.55 }}>
-            Free to start. Google sign-in. Under two minutes.
+            Completely free. Google sign-in. Under two minutes.
           </p>
         </div>
 

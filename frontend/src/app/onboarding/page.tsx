@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStore } from '@/utils/store';
+import { api, isApiError, type LLMProvider } from '@/utils/api';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ function WandLogo() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src="/logo.png" alt="Hopper" style={{ width: 28, height: 28, borderRadius: 'var(--radius-sm)', display: 'block', flexShrink: 0 }} />
+      <img src="/logo.png" alt="Wand" style={{ width: 28, height: 28, borderRadius: 'var(--radius-sm)', display: 'block', flexShrink: 0 }} />
       <span
         style={{
           fontFamily: 'var(--font-display)',
@@ -97,7 +98,7 @@ function WandLogo() {
           letterSpacing: '-0.01em',
         }}
       >
-        Hopper
+        Wand
       </span>
     </div>
   );
@@ -107,11 +108,12 @@ function WandLogo() {
 
 // Extension step intentionally removed from onboarding flow (v1).
 // InstallHopper component kept below for future re-introduction.
-const STEPS: { key: 'agreements'; label: string }[] = [
-  { key: 'agreements', label: 'Agreements' },
+const STEPS: { key: 'terms' | 'ai_keys'; label: string }[] = [
+  { key: 'terms', label: 'Terms' },
+  { key: 'ai_keys', label: 'AI Keys' },
 ];
 
-function Stepper({ current }: { current: 'agreements' }) {
+function Stepper({ current }: { current: 'terms' | 'ai_keys' }) {
   const currentIdx = STEPS.findIndex((s) => s.key === current);
 
   return (
@@ -369,7 +371,7 @@ function Terms({
               A couple of agreements
             </h1>
             <p style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.5, margin: 0 }}>
-              iNeedaJob.pro analyzes your career documents with AI. We need your explicit consent before
+              Wand analyzes your career documents with AI. We need your explicit consent before
               anything is processed.
             </p>
           </div>
@@ -389,7 +391,7 @@ function Terms({
             }}
           >
             <p style={{ fontWeight: 600, color: 'var(--text)', marginBottom: 6, margin: '0 0 6px' }}>
-              Before you continue
+              Summary of terms
             </p>
             <p style={{ margin: '0 0 8px' }}>
               Your uploaded resumes, LinkedIn exports, and portfolios are stored privately and used
@@ -399,34 +401,11 @@ function Terms({
               Career documents are sent to third-party LLM providers (Gemini, xAI, DeepSeek) solely
               to produce your analysis. They are never used to train models and never sold.
             </p>
-            <p style={{ margin: '0 0 8px' }}>
+            <p style={{ margin: 0 }}>
               You can delete any file, any job, or your entire account at any time from Settings.
               Deletion is permanent and removes associated analysis.
             </p>
           </div>
-
-          {/* Full-document links */}
-          <p style={{ fontSize: 12.5, color: 'var(--text-3)', lineHeight: 1.6, margin: '-10px 0 0' }}>
-            Read the full{' '}
-            <a
-              href="/terms"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: 'var(--text-2)', textDecoration: 'underline', textUnderlineOffset: 2 }}
-            >
-              Terms of Service
-            </a>
-            {' '}and{' '}
-            <a
-              href="/privacy"
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: 'var(--text-2)', textDecoration: 'underline', textUnderlineOffset: 2 }}
-            >
-              Privacy Policy
-            </a>
-            .
-          </p>
 
           {/* Check rows */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -434,15 +413,15 @@ function Terms({
               checked={tos}
               onToggle={() => setTos((v) => !v)}
               required={true}
-              title="I agree to the Terms of Service"
-              desc="Required to create an account and use the service."
+              title="I agree to the Terms of Service and Privacy Policy"
+              desc="The basics of using Wand and how your data is handled."
             />
             <CheckRow
               checked={ai}
               onToggle={() => setAi((v) => !v)}
               required={true}
               title="I consent to AI processing of my career documents"
-              desc="Required for resume scoring, gap analysis, and cover letters, as described in the Privacy Policy."
+              desc="Required for resume scoring, gap analysis, and cover letters."
             />
             <CheckRow
               checked={updates}
@@ -498,8 +477,8 @@ function Terms({
                   height: 36,
                   borderRadius: 'var(--radius-sm)',
                   border: 'none',
-                  background: ready ? 'var(--btn-primary)' : 'var(--surface-2)',
-                  color: ready ? 'var(--on-btn-primary)' : 'var(--text-3)',
+                  background: ready ? 'var(--accent)' : 'var(--surface-2)',
+                  color: ready ? 'var(--on-accent)' : 'var(--text-3)',
                   fontSize: 13.5,
                   fontWeight: 500,
                   cursor: ready ? 'pointer' : 'not-allowed',
@@ -781,7 +760,7 @@ function HopperDemo() {
                 whiteSpace: 'nowrap',
               }}
             >
-              Hopper
+              Wand
             </span>
             {/* Log It chip */}
             <button
@@ -874,7 +853,7 @@ function HopperDemo() {
             }}
           >
             <WandIcon name="check" size={13} stroke={3} />
-            {toast === 'log' ? 'Application logged' : 'Saved · Opening Hopper…'}
+            {toast === 'log' ? 'Application logged' : 'Saved · Opening Wand…'}
           </div>
         )}
       </div>
@@ -891,7 +870,7 @@ function HopperDemo() {
           color: 'var(--text-3)',
         }}
       >
-        {hover ? 'Pick a mode — Log It or Analyze' : '↑ Hover the Hopper button on the right edge'}
+        {hover ? 'Pick a mode — Log It or Analyze' : '↑ Hover the Wand button on the right edge'}
       </div>
     </div>
   );
@@ -952,7 +931,7 @@ function InstallHopper({
             <div>
               <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>Hopper</div>
               <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>
-                Hopper Companion · Chrome extension
+                Wand Companion · Chrome extension
               </div>
             </div>
             <span
@@ -996,7 +975,7 @@ function InstallHopper({
               maxWidth: 440,
             }}
           >
-            Hopper watches while you browse. Apply to a job, hover the Hopper button on the edge of
+            Hopper watches while you browse. Apply to a job, hover the Wand button on the edge of
             the page, and it&apos;s logged — or analyzed — in one click.
           </p>
 
@@ -1013,7 +992,7 @@ function InstallHopper({
               icon="check"
               title="Log It"
               tone="soft"
-              desc="Captures the job and syncs to Hopper instantly. Zero friction."
+              desc="Captures the job and syncs to Wand instantly. Zero friction."
             />
             <ModeCard
               icon="sparkles"
@@ -1104,7 +1083,7 @@ function InstallHopper({
               alignItems: 'center',
             }}
           >
-            {['Works on Chrome', 'No account needed to track', 'Syncs to Hopper'].map((t) => (
+            {['Works on Chrome', 'No account needed to track', 'Syncs to Wand'].map((t) => (
               <span key={t} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                 <WandIcon name="check" size={12} stroke={2.5} color="oklch(0.65 0.15 145)" />
                 {t}
@@ -1190,12 +1169,258 @@ function InstallHopper({
             }}
           >
             <WandIcon name="arrow-left" size={13} stroke={2} />
-            Back
+            Back to terms
           </button>
         </div>
 
         {/* Right pane */}
         <HopperDemo />
+      </div>
+    </div>
+  );
+}
+
+// ─── Step 2b: AI Keys ────────────────────────────────────────────────────────
+
+const PROVIDER_KEY_LINKS: Record<string, string> = {
+  anthropic: 'https://console.anthropic.com/keys',
+  openai: 'https://platform.openai.com/api-keys',
+  gemini: 'https://aistudio.google.com/app/apikey',
+  xai: 'https://console.x.ai/',
+  deepseek: 'https://platform.deepseek.com/api_keys',
+};
+
+function AIKeys({
+  onBack,
+  onContinue,
+  user,
+}: {
+  onBack: () => void;
+  onContinue: () => void;
+  user: { name: string; email: string } | null;
+}) {
+  const [providers, setProviders] = useState<LLMProvider[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [keyInputs, setKeyInputs] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<Record<string, boolean>>({});
+  const [keyStatus, setKeyStatus] = useState<Record<string, { valid: boolean; message: string } | null>>({});
+  const [applyingRecommended, setApplyingRecommended] = useState(false);
+  const [recommendedSuccess, setRecommendedSuccess] = useState(false);
+
+  const loadProviders = useCallback(async () => {
+    try {
+      const data = await api.getLLMProviders();
+      setProviders(data);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadProviders(); }, [loadProviders]);
+
+  const handleSaveKey = async (provider: string) => {
+    const key = keyInputs[provider]?.trim();
+    if (!key) return;
+    setSaving(s => ({ ...s, [provider]: true }));
+    setKeyStatus(s => ({ ...s, [provider]: null }));
+    try {
+      const result = await api.saveLLMKey(provider, key);
+      if (result.valid) {
+        setKeyStatus(s => ({ ...s, [provider]: { valid: true, message: `Valid — key ending in ${result.key_last4}` } }));
+        setKeyInputs(s => ({ ...s, [provider]: '' }));
+        await loadProviders();
+      } else {
+        setKeyStatus(s => ({ ...s, [provider]: { valid: false, message: 'Invalid key — please check and try again' } }));
+      }
+    } catch (err) {
+      const msg = isApiError(err) && err.status === 422 && err.message
+        ? err.message
+        : 'Failed to save key';
+      setKeyStatus(s => ({ ...s, [provider]: { valid: false, message: msg } }));
+    } finally {
+      setSaving(s => ({ ...s, [provider]: false }));
+    }
+  };
+
+  const handleApplyRecommended = async () => {
+    setApplyingRecommended(true);
+    try {
+      await api.applyRecommendedLLM();
+      setRecommendedSuccess(true);
+      setTimeout(() => setRecommendedSuccess(false), 3000);
+    } catch {
+      // ignore
+    } finally {
+      setApplyingRecommended(false);
+    }
+  };
+
+  const hasAnyKey = providers.some(p => p.configured);
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <OnboardHeader user={user} />
+      <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '40px 24px 120px' }}>
+        <div style={{ maxWidth: 580, width: '100%', display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div>
+            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 32, fontWeight: 500, letterSpacing: '-0.02em', color: 'var(--text)', margin: '8px 0 6px' }}>
+              Add your AI keys
+            </h1>
+            <p style={{ fontSize: 14, color: 'var(--text-2)', lineHeight: 1.5, margin: 0 }}>
+              iNeedaJob.pro is BYOK — bring your own API keys. Add at least one to get started. You can change these any time in Settings.
+            </p>
+          </div>
+
+          {loading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}>
+              <div className="wand-spin" style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid var(--border)', borderTopColor: 'var(--accent)' }} />
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {providers.map(prov => {
+                const keyLink = PROVIDER_KEY_LINKS[prov.provider];
+                const status = keyStatus[prov.provider];
+                const isSavingThis = saving[prov.provider];
+
+                return (
+                  <div key={prov.provider} style={{
+                    background: 'var(--surface)', border: `1px solid ${prov.configured ? 'var(--strong)' : 'var(--border)'}`,
+                    borderRadius: 'var(--radius)', overflow: 'hidden',
+                  }}>
+                    <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{
+                        width: 32, height: 32, borderRadius: 'var(--radius-sm)',
+                        background: 'var(--bg-tint)', border: '1px solid var(--border)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700,
+                        color: 'var(--text-2)', flexShrink: 0,
+                      }}>
+                        {prov.provider.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>{prov.label}</div>
+                        {prov.configured && (
+                          <div style={{ fontSize: 11.5, color: 'var(--strong)', marginTop: 1, fontFamily: 'var(--font-mono)' }}>
+                            ✓ Configured ···· {prov.key_last4}
+                          </div>
+                        )}
+                      </div>
+                      {keyLink && !prov.configured && (
+                        <a href={keyLink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: 'var(--accent-ink)', textDecoration: 'underline', textUnderlineOffset: 2, flexShrink: 0 }}>
+                          Get key →
+                        </a>
+                      )}
+                    </div>
+                    {!prov.configured && (
+                      <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border-soft)', background: 'var(--bg-tint)' }}>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                          <input
+                            type="password"
+                            value={keyInputs[prov.provider] || ''}
+                            onChange={e => setKeyInputs(s => ({ ...s, [prov.provider]: e.target.value }))}
+                            placeholder={prov.provider === 'gemini' ? 'AIza…' : 'sk-…'}
+                            style={{
+                              flex: 1, height: 30, padding: '0 10px', fontSize: 13,
+                              background: 'var(--bg)', border: '1px solid var(--border)',
+                              borderRadius: 'var(--radius-sm)', color: 'var(--text)', outline: 'none',
+                              fontFamily: 'var(--font-mono)',
+                            }}
+                            onKeyDown={e => { if (e.key === 'Enter') handleSaveKey(prov.provider); }}
+                          />
+                          <button
+                            onClick={() => handleSaveKey(prov.provider)}
+                            disabled={isSavingThis || !keyInputs[prov.provider]?.trim()}
+                            style={{
+                              height: 30, padding: '0 12px', fontSize: 13, fontWeight: 500,
+                              borderRadius: 'var(--radius-sm)',
+                              background: keyInputs[prov.provider]?.trim() ? 'var(--accent)' : 'var(--surface-2)',
+                              color: keyInputs[prov.provider]?.trim() ? 'var(--on-accent)' : 'var(--text-3)',
+                              border: 'none', cursor: (isSavingThis || !keyInputs[prov.provider]?.trim()) ? 'not-allowed' : 'pointer',
+                              flexShrink: 0,
+                            }}
+                          >
+                            {isSavingThis ? 'Saving…' : 'Save'}
+                          </button>
+                        </div>
+                        {status && (
+                          <div style={{ marginTop: 5, fontSize: 12, color: status.valid ? 'var(--strong)' : 'var(--weak)', fontFamily: 'var(--font-mono)' }}>
+                            {status.valid ? '✓ ' : '✕ '}{status.message}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Recommended setup */}
+          {hasAnyKey && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)' }}>Apply recommended setup</div>
+                <div style={{ fontSize: 12, color: 'var(--text-3)' }}>Auto-assign the best model for each task.</div>
+              </div>
+              <button
+                onClick={handleApplyRecommended}
+                disabled={applyingRecommended}
+                style={{
+                  height: 30, padding: '0 12px', fontSize: 13, fontWeight: 500,
+                  borderRadius: 'var(--radius-sm)', border: 'none',
+                  background: 'var(--accent)', color: 'var(--on-accent)',
+                  cursor: applyingRecommended ? 'not-allowed' : 'pointer', flexShrink: 0,
+                }}
+              >
+                {applyingRecommended ? 'Applying…' : recommendedSuccess ? '✓ Applied' : 'Apply'}
+              </button>
+            </div>
+          )}
+
+          {/* Footer */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+            <button
+              onClick={onBack}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+                padding: '0 14px', height: 36, borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border)', background: 'transparent',
+                color: 'var(--text-2)', fontSize: 13.5, cursor: 'pointer',
+              }}
+            >
+              <WandIcon name="arrow-left" size={15} stroke={2} />
+              Back
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <button
+                onClick={onContinue}
+                style={{
+                  fontSize: 13, color: 'var(--text-3)', background: 'none', border: 'none',
+                  cursor: 'pointer', padding: '0 8px', height: 36,
+                }}
+              >
+                Skip for now
+              </button>
+              {hasAnyKey && (
+                <button
+                  onClick={onContinue}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '0 18px', height: 36, borderRadius: 'var(--radius-sm)',
+                    border: 'none', background: 'var(--btn-primary)',
+                    color: 'var(--on-btn-primary)', fontSize: 13.5, fontWeight: 500,
+                    cursor: 'pointer', transition: 'all 160ms ease',
+                  }}
+                >
+                  Continue
+                  <WandIcon name="arrow-right" size={15} stroke={2} />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1298,8 +1523,8 @@ function Done({
               padding: '0 14px',
               borderRadius: 'var(--radius-sm)',
               border: 'none',
-              background: 'var(--btn-primary)',
-              color: 'var(--on-btn-primary)',
+              background: 'var(--accent)',
+              color: 'var(--on-accent)',
               fontSize: 13.5,
               fontWeight: 500,
               cursor: 'pointer',
@@ -1326,7 +1551,7 @@ function Done({
             }}
           >
             <WandIcon name="upload" size={14} stroke={2} />
-            Upload documents
+            Upload resume
           </button>
         </div>
 
@@ -1355,7 +1580,7 @@ function Done({
 export default function OnboardingPage() {
   const { isAuthenticated, token, _hasHydrated, user, setOnboardingComplete, fetchUser } = useStore();
   const router = useRouter();
-  const [step, setStep] = useState<'agreements' | 'done'>('agreements');
+  const [step, setStep] = useState<'terms' | 'ai_keys' | 'done'>('terms');
 
   useEffect(() => {
     if (_hasHydrated && !token) {
@@ -1363,7 +1588,7 @@ export default function OnboardingPage() {
     }
   }, [_hasHydrated, token, router]);
 
-  const handleDone = async (dest: '/dashboard' | '/profile' | '/profile?docs=1') => {
+  const handleDone = async (dest: '/dashboard' | '/profile') => {
     try {
       const { api } = await import('@/utils/api');
       await api.completeOnboarding();
@@ -1376,17 +1601,20 @@ export default function OnboardingPage() {
 
   const userName = user?.name?.split(' ')[0] || 'there';
 
-  if (!_hasHydrated || !isAuthenticated) return null;
+  if (!_hasHydrated || !token) return null;
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)', color: 'var(--text)' }}>
-      {step === 'agreements' && (
-        <Terms onBack={() => router.push('/')} onContinue={() => setStep('done')} user={user} />
+      {step === 'terms' && (
+        <Terms onBack={() => router.push('/')} onContinue={() => setStep('ai_keys')} user={user} />
+      )}
+      {step === 'ai_keys' && (
+        <AIKeys onBack={() => setStep('terms')} onContinue={() => setStep('done')} user={user} />
       )}
       {step === 'done' && (
         <Done
           onDashboard={() => handleDone('/dashboard')}
-          onUpload={() => handleDone('/profile?docs=1')}
+          onUpload={() => handleDone('/profile')}
           userName={userName}
         />
       )}

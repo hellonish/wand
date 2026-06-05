@@ -33,10 +33,8 @@ export default function LandingFooter() {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', justifyContent: 'flex-end', marginBottom: 2 }}>
             {[
-              { href: '/contact', label: 'Contact' },
               { href: '/terms', label: 'Terms' },
               { href: '/privacy', label: 'Privacy' },
-              { href: '/refunds', label: 'Refunds' },
             ].map((l) => (
               <a
                 key={l.href}

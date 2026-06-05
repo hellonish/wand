@@ -21,6 +21,25 @@ interface FetchOptions extends RequestInit {
     suppressError?: boolean;
 }
 
+// ============ Error types ============
+
+export interface ApiError extends Error {
+    code?: string;
+    status?: number;
+    retryAfter?: number;
+    body?: {
+        detail?: string;
+        needed?: number;
+        balance?: number;
+        retry_after?: number;
+        code?: string;
+    };
+}
+
+export function isApiError(e: unknown): e is ApiError {
+    return e instanceof Error;
+}
+
 // Fetch wrapper with auth
 async function fetchWithAuth(url: string, options: FetchOptions = {}) {
     const token = getToken();
@@ -55,18 +74,14 @@ async function fetchWithAuth(url: string, options: FetchOptions = {}) {
             ? rawDetail
             : rawDetail != null && typeof rawDetail === 'object'
             ? (rawDetail as { message?: string }).message ?? JSON.stringify(rawDetail)
-            : error.error  // slowapi 429 uses {error: "..."} instead of {detail: "..."}
-            ?? error.message;
+            : error.message;
         const apiError = new Error(detail || 'Request failed') as ApiError;
         apiError.status = response.status;
-        if (rawDetail != null && typeof rawDetail === 'object') {
-            apiError.body = rawDetail as ApiError['body'];
-        }
         // Attach structured code from the detail object when available (e.g. NO_PROFILE_DOCUMENTS)
         if (rawDetail != null && typeof rawDetail === 'object' && (rawDetail as { code?: string }).code) {
             apiError.code = (rawDetail as { code: string }).code;
         }
-        // Extract retry-after for 429s — prefer body retry_after, fall back to Retry-After header
+        // Extract retry-after for 429s
         if (response.status === 429) {
             const headerRetry = response.headers.get('Retry-After');
             const bodyRetry = rawDetail != null && typeof rawDetail === 'object'
@@ -80,56 +95,36 @@ async function fetchWithAuth(url: string, options: FetchOptions = {}) {
     return response.json();
 }
 
-// ============ Error types ============
+// ============ LLM Provider types ============
 
-export interface ApiError extends Error {
-    code?: string;
-    status?: number;
-    retryAfter?: number;
-    body?: {
-        detail?: string;
-        needed?: number;
-        balance?: number;
-        retry_after?: number;
-        upgrade_url?: string;
-        topup_url?: string;
-        portal_url?: string;
-        code?: string;
-    };
+export interface LLMProvider {
+    provider: string;
+    label: string;
+    configured: boolean;
+    key_last4: string | null;
 }
 
-export function isApiError(e: unknown): e is ApiError {
-    return e instanceof Error;
+export interface LLMTaskConfig {
+    provider: string;
+    model: string;
 }
 
-// ============ Billing types ============
-
-export interface CapMap { [task: string]: number; }
-
-export interface Plan {
-    code: 'free' | 'starter' | 'pro' | 'max';
-    name: string;
-    price_cents: number;
-    monthly_credits: number;
-    daily_caps: CapMap;
-    weekly_caps: CapMap | null;
+export interface LLMModelOption {
+    id: string;
+    label: string;
 }
 
-export interface BillingStatus {
-    plan_code: 'free' | 'starter' | 'pro' | 'max';
-    plan_name: string;
-    status: 'active' | 'trialing' | 'past_due' | 'canceled';
-    cancel_at_period_end: boolean;
-    balance: number;
-    grant_balance: number;      // credits remaining from monthly plan
-    topup_total: number;        // total topup credits ever purchased
-    topup_remaining: number;    // topup credits still available
-    period_end: string | null;
-    current_period_start: string | null;
-    daily_caps: CapMap;
-    weekly_caps: CapMap | null;
-    monthly_credits: number;
-    scheduled_downgrade: string | null;
+export interface LLMGroup {
+    id: string;
+    label: string;
+}
+
+export interface LLMConfig {
+    groups: LLMGroup[];
+    selection: Record<string, LLMTaskConfig>;          // group_id -> {provider, model}
+    models_by_provider: Record<string, LLMModelOption[]>;
+    available_providers: string[];
+    has_any_key: boolean;
 }
 
 export interface UsageEvent {
@@ -633,22 +628,20 @@ export const api = {
         return res.blob();
     },
 
-    // Billing
-    getBillingStatus: (): Promise<BillingStatus> => fetchWithAuth('/api/billing/me'),
-    getPlans: (): Promise<Plan[]> => fetchWithAuth('/api/billing/plans'),
-    getUsage: (): Promise<UsageEvent[]> => fetchWithAuth('/api/billing/usage'),
-    previewPlanChange: (planCode: string): Promise<{
-        type: 'new_subscription' | 'same_plan' | 'upgrade' | 'downgrade';
-        immediate_charge_cents: number | null;
-        next_cycle_date: number | null;
-        next_cycle_charge_cents: number | null;
-    }> => fetchWithAuth(`/api/billing/preview-change?plan_code=${planCode}`),
-    createCheckout: (planCode: string): Promise<{ url: string }> =>
-        fetchWithAuth('/api/billing/checkout', { method: 'POST', body: JSON.stringify({ plan_code: planCode }) }),
-    createPortal: (): Promise<{ url: string }> =>
-        fetchWithAuth('/api/billing/portal', { method: 'POST' }),
-    createTopup: (): Promise<{ url: string }> =>
-        fetchWithAuth('/api/billing/topup', { method: 'POST' }),
+    // Usage
+    getUsage: (): Promise<UsageEvent[]> => fetchWithAuth('/api/llm/usage'),
+
+    // LLM Providers (BYOK)
+    getLLMProviders: (): Promise<LLMProvider[]> => fetchWithAuth('/api/llm/providers'),
+    saveLLMKey: (provider: string, api_key: string): Promise<{valid: boolean, key_last4: string}> =>
+        fetchWithAuth(`/api/llm/keys/${provider}`, { method: 'PUT', body: JSON.stringify({ api_key }) }),
+    deleteLLMKey: (provider: string): Promise<{ok: boolean}> =>
+        fetchWithAuth(`/api/llm/keys/${provider}`, { method: 'DELETE' }),
+    getLLMConfig: (): Promise<LLMConfig> => fetchWithAuth('/api/llm/config'),
+    saveLLMConfig: (selection: Record<string, LLMTaskConfig>): Promise<LLMConfig> =>
+        fetchWithAuth('/api/llm/config', { method: 'PUT', body: JSON.stringify({ selection }) }),
+    applyRecommendedLLM: (): Promise<LLMConfig> =>
+        fetchWithAuth('/api/llm/recommended', { method: 'POST' }),
 
     // News
     getNews: (companyName: string): Promise<NewsResponse> => fetchWithAuth(`/api/news/${encodeURIComponent(companyName)}`),

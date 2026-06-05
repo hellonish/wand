@@ -20,7 +20,7 @@ export default function LandingNav() {
     { label: 'What', href: '#what' },
     { label: 'Why', href: '#why' },
     { label: 'How', href: '#how-it-works' },
-    { label: "I'm Down", href: '#pricing' },
+    { label: "I'm Down", href: '#get-started' },
   ];
 
   return (

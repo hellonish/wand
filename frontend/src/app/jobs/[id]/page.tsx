@@ -2334,7 +2334,10 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                 });
             } else if (type === 'joblens_step_failed' && step) {
                 setStepStatuses(prev => ({ ...prev, [step]: 'error' }));
-                const errMsg = (data.error as string) || 'Step failed.';
+                const rawErr = (data.error as string) || '';
+                const isInternalError = /is not defined|has no attribute|Traceback|TypeError:|AttributeError:|NameError:|ValueError:|KeyError:|IndexError:|Exception:/i.test(rawErr);
+                const errMsg = isInternalError ? 'An internal error occurred.' : (rawErr || 'Step failed.');
+                if (isInternalError) console.error('[joblens step error]', step, rawErr);
                 setStepErrors(prev => ({ ...prev, [step]: errMsg }));
             } else if (type === 'joblens_pipeline_complete') {
                 load(true);
