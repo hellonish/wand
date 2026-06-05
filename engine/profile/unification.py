@@ -17,8 +17,17 @@ def merge_profile_sources(
 
     if not sources:
         return {}, None
+
     if len(sources) == 1:
-        return dict(next(iter(sources.values()))), None
+        # Still deduplicate — the parser can produce duplicate entries within a single source
+        data = dict(next(iter(sources.values())))
+        if "work_experience" in data and isinstance(data["work_experience"], list):
+            data["work_experience"] = _merge_records(iter(data["work_experience"]), ("company_name", "job_title"))
+        if "education" in data and isinstance(data["education"], list):
+            data["education"] = _merge_records(iter(data["education"]), ("institution", "degree"))
+        if "skills" in data and isinstance(data["skills"], list):
+            data["skills"] = _merge_strings(iter(data["skills"]))
+        return data, None
 
     response = inference.unify_profiles(llm, sources, global_context, per_file_context)
     return response.model_dump(), None
