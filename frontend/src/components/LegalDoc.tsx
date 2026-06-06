@@ -8,7 +8,6 @@
 
 import React from 'react';
 import Link from 'next/link';
-import Header from '@/components/Header';
 
 export const LEGAL_EFFECTIVE_DATE = 'June 4, 2026';
 export const LEGAL_COMPANY = 'iNeedaJob.pro';
@@ -32,7 +31,22 @@ export function LegalPage({
 }) {
     return (
         <main style={{ minHeight: '100vh' }}>
-            <Header />
+            {/* Minimal public nav — no sidebar, no auth */}
+            <nav style={{
+                position: 'sticky', top: 0, zIndex: 40,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '0 24px', height: 52,
+                background: 'var(--bg)', borderBottom: '1px solid var(--border-soft)',
+            }}>
+                <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none', color: 'var(--text)' }}>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src="/logo.svg" alt="iNeedaJob.pro" style={{ width: 26, height: 26, borderRadius: 'var(--radius)', display: 'block' }} />
+                    <span style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 500, letterSpacing: '-0.02em' }}>iNeedaJob.pro</span>
+                </Link>
+                <Link href="/dashboard" style={{ fontSize: 13, color: 'var(--text-2)', textDecoration: 'none' }}>
+                    Back to app →
+                </Link>
+            </nav>
 
             <article
                 style={{
