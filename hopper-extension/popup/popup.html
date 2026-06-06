@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hopper</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+
+  <!-- ── Header ─────────────────────────────────────────────── -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20 L17 7"/><path d="M14 4 L14 6 M19 5 L17 7 M20 10 L18 10"/></svg>
+      </div>
+      <div class="header-titles">
+        <div class="app-title-row">
+          <span class="app-name">Hopper</span>
+          <span id="connection-status-badge" class="connection-status-badge">Local</span>
+        </div>
+        <span class="app-sub">Wand Companion</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="icon-btn" id="export-btn" title="Export CSV">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </button>
+      <button class="icon-btn" id="settings-btn" title="Settings">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 1 0 4.93 19.07 10 10 0 0 0 19.07 4.93z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── Current Page Detection ─────────────────────────────── -->
+  <section class="current-page" id="current-page" style="display:none">
+    <div class="detected-badge">
+      <span class="pulse-dot"></span>
+      <span class="detected-label" id="detected-ats">Detected</span>
+    </div>
+    <div class="detected-job" id="detected-job-title">Loading…</div>
+    <div class="detected-company" id="detected-company">—</div>
+    <div class="page-actions">
+      <button class="btn btn-track" id="btn-track">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+        Quick Track
+      </button>
+      <button class="btn btn-wand" id="btn-wand">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8L19 13"/><path d="M15 9h.01"/><path d="M17.8 6.2L19 5"/><path d="M13.2 6.2L12 5"/><path d="M13.2 11.8L12 13"/><path d="m3 21 9-9"/></svg>
+        Analyze with Wand
+      </button>
+    </div>
+  </section>
+
+  <!-- ── Stats Bar ──────────────────────────────────────────── -->
+  <div class="stats-bar">
+    <div class="stat">
+      <span class="stat-value" id="stat-total">0</span>
+      <span class="stat-label">Total</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <span class="stat-value" id="stat-week">0</span>
+      <span class="stat-label">This Week</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <span class="stat-value" id="stat-month">0</span>
+      <span class="stat-label">This Month</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <span class="stat-value" id="stat-interviews">0</span>
+      <span class="stat-label">Interviews</span>
+    </div>
+  </div>
+
+  <!-- ── Filter Tabs ────────────────────────────────────────── -->
+  <div class="filter-tabs">
+    <button class="filter-tab active" data-filter="all">All</button>
+    <button class="filter-tab" data-filter="tracked">Tracked</button>
+    <button class="filter-tab" data-filter="applied">Applied</button>
+    <button class="filter-tab" data-filter="screening">Screening</button>
+    <button class="filter-tab" data-filter="interview">Interview</button>
+    <button class="filter-tab" data-filter="offer">Offer</button>
+  </div>
+
+  <!-- ── Search ─────────────────────────────────────────────── -->
+  <div class="search-wrap">
+    <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input class="search-input" id="search-input" type="text" placeholder="Search jobs…" />
+  </div>
+
+  <!-- ── Application List ───────────────────────────────────── -->
+  <main class="app-list" id="app-list">
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">🎯</div>
+      <div class="empty-title">No applications yet</div>
+      <div class="empty-sub">Apply to a job and Hopper will automatically track it.</div>
+    </div>
+  </main>
+
+  <!-- ── Add Manual Button ──────────────────────────────────── -->
+  <div class="footer">
+    <button class="btn-add-manual" id="btn-add-manual">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+      Add Manually
+    </button>
+  </div>
+
+  <!-- ── Manual Add Modal ───────────────────────────────────── -->
+  <div class="modal-overlay" id="modal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Add Application</span>
+        <button class="icon-btn" id="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label>Job Title *</label>
+          <input type="text" id="m-title" placeholder="e.g. Senior Engineer" />
+        </div>
+        <div class="field">
+          <label>Company *</label>
+          <input type="text" id="m-company" placeholder="e.g. Stripe" />
+        </div>
+        <div class="field">
+          <label>URL</label>
+          <input type="url" id="m-url" placeholder="https://..." />
+        </div>
+        <div class="field">
+          <label>Location</label>
+          <input type="text" id="m-location" placeholder="e.g. Remote, NYC" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-track" id="modal-save">Save Application</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
