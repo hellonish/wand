@@ -2,7 +2,18 @@
 
 An open-source, AI-powered job application assistant. Paste a job link, upload your resume, and get a match score, gap analysis, tailored resume suggestions, a cover letter, and a list of people to reach out to — all in one run.
 
-Built with a BYOK (Bring Your Own Key) model: you connect your own LLM provider keys and the app never stores or proxies your credentials beyond encrypting them at rest.
+**Live at [ineedajob.pro](https://ineedajob.pro)** — sign in with Google to use the hosted version.
+
+**Self-host this repo** — the `main` branch runs without any login. Start the backend and frontend locally and go straight to the dashboard.
+
+---
+
+## Branches
+
+| Branch | Purpose |
+|---|---|
+| `main` | Local development — no authentication, goes straight to the dashboard |
+| `prod` | Production build — Google OAuth login, deployed at [ineedajob.pro](https://ineedajob.pro) |
 
 ---
 
@@ -27,20 +38,19 @@ Built with a BYOK (Bring Your Own Key) model: you connect your own LLM provider 
 | Frontend | Next.js 14, TypeScript, Tailwind CSS, Zustand, Framer Motion |
 | API | FastAPI, SQLAlchemy, Pydantic |
 | Engine | Python, `instructor` (structured LLM output), PyMuPDF |
-| Auth | Google OAuth 2.0 → stateless HS256 JWT |
+| Auth | Google OAuth 2.0 → stateless HS256 JWT (`prod` branch only) |
 | Database | SQLite (local dev) / PostgreSQL via Supabase (production) |
 | File storage | Local filesystem (dev) / Supabase Storage (production) |
 | Real-time | WebSockets (per-job analysis progress stream) |
 
 ---
 
-## Getting Started
+## Getting Started (local, no login required)
 
 ### Prerequisites
 
 - Python 3.10+
 - Node.js 18+
-- A [Google OAuth 2.0 client](https://console.cloud.google.com/) (for login)
 - At least one LLM provider API key (see [BYOK](#byok--bring-your-own-key))
 
 ### 1. Clone and configure
@@ -51,17 +61,11 @@ cd ineedajob.pro
 cp .env.example .env
 ```
 
-Edit `.env` — the required fields to get running locally:
+Edit `.env` — the only required field to start locally:
 
 ```env
-GOOGLE_CLIENT_ID=...
-GOOGLE_CLIENT_SECRET=...
-JWT_SECRET_KEY=$(python -c "import secrets; print(secrets.token_hex(32))")
 APP_ENCRYPTION_KEY=$(python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
-BACKEND_URL=http://localhost:8000
-FRONTEND_URL=http://localhost:3000
-BYOK_REQUIRED=false
-XAI_API_KEY=...          # or any other provider key below
+XAI_API_KEY=...   # or any other provider key
 ```
 
 See [Configuration](#configuration) for all options.
@@ -75,8 +79,6 @@ pip install -r requirements.txt
 uvicorn api.main:app --reload
 ```
 
-The API is now running at `http://localhost:8000`.
-
 ### 3. Frontend
 
 ```bash
@@ -85,7 +87,7 @@ npm install
 npm run dev
 ```
 
-The app is now running at `http://localhost:3000`.
+Open [http://localhost:3000](http://localhost:3000) — you land directly on the dashboard, no login needed.
 
 ### 4. One-command start (after first setup)
 
@@ -93,32 +95,28 @@ The app is now running at `http://localhost:3000`.
 ./ineedajob.sh
 ```
 
-Starts the backend and frontend together.
-
 ---
 
 ## Configuration
 
-All configuration is through `.env`. The full reference is in [`.env.example`](.env.example). Key variables:
+All configuration is through `.env`. The full reference is in [`.env.example`](.env.example).
 
 | Variable | Required | Description |
 |---|---|---|
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth credentials |
-| `JWT_SECRET_KEY` | Yes | Long random string for signing JWTs |
-| `APP_ENCRYPTION_KEY` | Yes | Fernet key for encrypting stored API keys at rest |
-| `BACKEND_URL` / `FRONTEND_URL` | Yes | Public URLs (no trailing slash) |
-| `BYOK_REQUIRED` | No | `true` = every user must add their own key; `false` = server keys are used as fallback |
+| `APP_ENCRYPTION_KEY` | Yes | Fernet key for encrypting stored BYOK API keys at rest |
+| `BYOK_REQUIRED` | No | `true` = users must add their own key; `false` = server keys used as fallback (default) |
 | `XAI_API_KEY` | No | Server-side xAI (Grok) fallback key |
 | `DEEPSEEK_API_KEY` | No | Server-side DeepSeek fallback key |
 | `DATABASE_URL` | No | Defaults to local SQLite; set to a Postgres URI for production |
 | `SUPABASE_URL` / `SUPABASE_SERVICE_KEY` | No | Required for Supabase file storage in production |
+| `ALLOWED_ORIGINS` | No | Defaults to `http://localhost:3000`; set explicitly in deployed environments |
 | `GOOGLE_CSE_API_KEY` / `GOOGLE_CSE_ID` | No | Enables Google Custom Search for reachout (falls back to DuckDuckGo otherwise) |
 
 ---
 
 ## BYOK — Bring Your Own Key
 
-Users connect their own API keys from the Settings → AI Providers page. Keys are encrypted at rest with Fernet (`APP_ENCRYPTION_KEY`) and decrypted only in memory at inference time. The last four characters are stored for display; the plaintext is never logged or returned.
+Go to Settings → AI Providers to add your own LLM provider keys. Keys are encrypted at rest (Fernet) and decrypted only in memory at inference time.
 
 Supported providers:
 
@@ -130,9 +128,9 @@ Supported providers:
 | xAI (Grok) | grok-3 | grok-3-fast |
 | DeepSeek | deepseek-reasoner | deepseek-chat |
 
-"Use recommended setup" automatically routes reasoning-heavy tasks (match scoring, cover letter) to the best available reasoning model, and fast tasks (parsing, extraction) to the best available fast model, based on which keys the user has added.
+"Use recommended setup" automatically picks the best available provider per task tier based on which keys you've added.
 
-Per-task routing is defined in `engine/model_registry.py` and `api/llm_config.json`.
+Per-task routing is defined in [`engine/model_registry.py`](engine/model_registry.py) and [`api/llm_config.json`](api/llm_config.json).
 
 ---
 
@@ -166,7 +164,7 @@ To install locally:
 │   └── inference.py      # Typed inference calls with token budgets
 ├── frontend/             # Next.js app
 │   └── src/
-│       ├── app/          # Pages (jobs, profile, settings, cover letters, …)
+│       ├── app/          # Pages (dashboard, jobs, profile, settings, cover letters, …)
 │       ├── components/   # UI components
 │       └── utils/        # API client, state store, cache
 ├── hopper-extension/     # Chrome extension
