@@ -1,0 +1,31 @@
+version: "3.9"
+
+services:
+  wand-api:
+    image: wand-api:latest
+    container_name: wand-api
+    restart: unless-stopped
+    env_file: .env
+    # No local volumes needed — DB is Supabase Postgres, files are Supabase Storage
+    networks:
+      - proxy
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot
+    networks:
+      - proxy
+    depends_on:
+      - wand-api
+
+networks:
+  proxy:
+    name: proxy

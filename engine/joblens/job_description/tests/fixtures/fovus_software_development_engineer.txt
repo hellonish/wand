@@ -1,0 +1,42 @@
+Fovus Corporation
+Software Development Engineer
+Posted 1 month ago. Apply by June 14, 2026 at 11:59 AM
+
+At a glance
+$50-100K/yr
+Hybrid or onsite, based in Chandler, AZ
+Full-time
+US work authorization required
+Eligible for visa sponsorship and open to candidates with OPT/CPT
+
+Fovus is a seed-stage tech startup developing next-generation cloud high-performance computing solutions for enterprises. Our mission is to democratize HPC for all. We are post-revenue, and our solution is trusted by Fortune 500 and high-tech unicorns/startups.
+
+Basic Information:
+
+Open to remote working.
+Fresh graduates and international candidates are welcome to apply.
+There will be a paid probationary period of 4 to 6 months.
+Equity compensation will be offered after the probationary period.
+US work authorization, CPT, OPT, GreenCard, or Citizenship is required if in the USA or as a contractor remotely in your country. We are willing to sponsor USA H1B visas after the probationary period.
+
+Responsibilities:
+
+Requirements analysis: Understanding the requirements of the project, analyzing them, and coming up with a plan for implementing the software solution.
+Design: Developing a high-level design of the software system, including software architecture, data models, and algorithms.
+Coding: Writing efficient and maintainable code using programming languages such as JavaScript, Python, or others.
+Testing: Conducting unit tests, integration tests, and other types of tests to ensure that the software is functioning as intended.
+Debugging: Identifying and fixing defects or issues in the software system.
+Deployment: Deploying the software solution to production or other environments.
+Maintenance: Maintaining the software solution by fixing defects, adding new features, or improving its performance.
+Documentation: Creating and maintaining technical documentation such as user manuals, technical specifications, and design documents.
+
+Job Requirements:
+
+Proficiency in two or more programming languages, such as TypeScript, JavaScript and Python.
+Hands-on experience with cloud platforms such as AWS, Azure, or Google Cloud.
+Familiarity with microservices architecture and containerization technologies, including Function as a Service such as AWS Lambda.
+Knowledge of relational and NoSQL databases, such as AWS DynamoDB.
+Understanding of application and cloud security, with the ability to write secure and robust code.
+Hands-on experience with tools like CloudFormation and CDK.
+Proficiency in continuous integration and continuous delivery tools and workflows.
+Ability to work effectively with team members, including developers and managers.

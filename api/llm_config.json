@@ -1,0 +1,13 @@
+{
+  "provider": "xai",
+  "models": {
+    "default": "grok-3-fast",
+    "profile": "grok-3-fast",
+    "job_description": "grok-3-mini",
+    "company_intel": "grok-3-mini",
+    "job_match": "grok-3-fast",
+    "reachout": "grok-3-fast",
+    "cover_letter": "grok-3-fast",
+    "cover_letter_tone": "grok-3-fast"
+  }
+}

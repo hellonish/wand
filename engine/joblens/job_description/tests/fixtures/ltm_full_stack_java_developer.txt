@@ -1,0 +1,33 @@
+Full Stack Java Developer
+Posted 2 days ago. Apply by June 19, 2026 at 11:59 PM
+
+At a glance
+$60K/yr
+Medical, dental, and vision coverage plus paid time off
+Hybrid or onsite, based in Richardson, TX
+Full-time
+US work authorization required
+
+LTM's Digital Technology team is looking for dynamic and enthusiastic candidates for Full Stack Java Developer position at Richardson, TX location.
+
+You Will:
+
+You will design, develop, and implement innovative software solutions that power our next generation platforms directly contributing to the AI transformation of the Portfolio Services.
+This includes actively leveraging and building cutting edge AI, Machine Learning, Data and predictive analytics technologies to deliver enhanced client solutions, drive operational excellence and create a significant competitive advantage for our products and platforms.
+You'll thrive within a dynamic cross functional global team contributing across the full software development lifecycle from conceptualization to deployment and monitoring.
+
+Skills You Will Bring:
+
+Core Java, strong fundamentals in OOP concepts not just definitions but implementation, Collections Framework, Array List, HashMap, HashSet, Exception Handling, Multithreading basics, Thread Runnable synchronization, Java 8 features, Lambda expressions, Stream API, Optional class.
+Spring MVC, Basic understanding of Spring Framework, Spring Boot for building production ready backend services.
+Ability to learn quickly and adapt quickly to changing priorities.
+Strong intellectual curiosity and affinity to technology.
+Exhibits attention to detail in day-to-day activities along with problem solving abilities.
+Technical curiosity and motivation to succeed.
+Well-rounded extra-curricular experiences, with demonstrated leadership.
+
+Education:
+
+Bachelor's degree or higher with a technology focus.
+Majors include Math, Engineering, Computer Science, Computer Information Systems, Information Technology, Cyber Security, and others.
+3.0 GPA or higher.

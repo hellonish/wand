@@ -1,0 +1,63 @@
+{
+  "input": {
+    "company_name": "Acme Cloud",
+    "website": null,
+    "max_pages": 8,
+    "include_engineering_posts": true
+  },
+  "identity": {
+    "name": null,
+    "website": null,
+    "canonical_domain": null,
+    "short_description": null,
+    "mission": null,
+    "industry": null,
+    "company_stage_or_scale": null,
+    "founded": null,
+    "headquarters_or_distribution": null,
+    "evidence": []
+  },
+  "product_signals": [],
+  "engineering_presence": {
+    "engineering_blog_found": false,
+    "engineering_blog_url": null,
+    "engineering_blog_title": null,
+    "post_count_sampled": 0,
+    "recent_posts": [],
+    "primary_engineering_topics": [],
+    "evidence": []
+  },
+  "technical_signals": {
+    "programming_languages": [],
+    "frameworks": [],
+    "infrastructure": [],
+    "cloud": [],
+    "databases": [],
+    "data_ai_ml": [],
+    "security": [],
+    "reliability": [],
+    "developer_tools": [],
+    "architecture_patterns": [],
+    "evidence": []
+  },
+  "engineering_culture": {
+    "values": [],
+    "working_style": [],
+    "quality_signals": [],
+    "open_source_signals": [],
+    "developer_experience_signals": [],
+    "collaboration_signals": [],
+    "evidence": []
+  },
+  "hiring_signals": {
+    "careers_url": null,
+    "hiring_locations": [],
+    "remote_or_work_mode": null,
+    "team_structure": [],
+    "interview_or_values_signals": [],
+    "evidence": []
+  },
+  "source_pages": [],
+  "extraction_notes": [],
+  "warnings": []
+}

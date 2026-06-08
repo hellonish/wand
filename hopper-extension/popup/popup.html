@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hopper</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+
+  <!-- ── Header ─────────────────────────────────────────────── -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">
+        <img src="../icons/logo.svg" alt="Hopper" width="26" height="26" />
+      </div>
+      <div class="header-titles">
+        <div class="app-title-row">
+          <span class="app-name">Hopper</span>
+          <span id="connection-status-badge" class="connection-status-badge">Local</span>
+        </div>
+        <span class="app-sub">Job Tracker</span>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="icon-btn" id="export-btn" title="Export CSV">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </button>
+      <button class="icon-btn" id="settings-btn" title="Settings">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 1 0 4.93 19.07 10 10 0 0 0 19.07 4.93z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ── Resume selection (pinned — always visible when signed in) -->
+  <section class="fill-profile-panel" id="fill-profile-panel">
+    <div class="resume-picker-head">
+      <span class="resume-picker-title">Select resume</span>
+      <button type="button" class="resume-refresh-btn" id="resume-refresh-btn" title="Reload resumes">Refresh</button>
+    </div>
+    <div class="resume-picker" id="resume-picker">
+      <div class="resume-list" id="resume-list">
+        <div class="resume-loading">Loading resumes…</div>
+      </div>
+      <div class="resume-pager" id="resume-pager"></div>
+    </div>
+    <div class="fill-status" id="fill-status" aria-live="polite"></div>
+  </section>
+
+  <div class="popup-body" id="popup-body">
+
+  <!-- ── Current Page Detection ─────────────────────────────── -->
+  <section class="current-page" id="current-page" style="display:none">
+    <div class="detected-badge" id="detected-badge">
+      <span class="pulse-dot" id="detected-pulse"></span>
+      <span class="detected-label" id="detected-ats">Detected</span>
+    </div>
+    <div class="page-edit-fields">
+      <div class="field">
+        <label for="p-title">Job title</label>
+        <input type="text" id="p-title" placeholder="Job title" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label for="p-company">Company</label>
+        <input type="text" id="p-company" placeholder="Company name" autocomplete="off" />
+      </div>
+    </div>
+    <div class="page-actions">
+      <button class="btn btn-track" id="btn-track">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+        Quick Track
+      </button>
+      <button class="btn btn-wand" id="btn-wand">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8L19 13"/><path d="M15 9h.01"/><path d="M17.8 6.2L19 5"/><path d="M13.2 6.2L12 5"/><path d="M13.2 11.8L12 13"/><path d="m3 21 9-9"/></svg>
+        Analyze
+      </button>
+    </div>
+  </section>
+
+  <!-- ── Page Extraction Debug (dev mode) ─────────────────── -->
+  <section class="extraction-debug" id="extraction-debug" style="display:none">
+    <div class="extraction-debug-head">
+      <span class="extraction-debug-title">Page read debug</span>
+      <button type="button" class="extraction-debug-refresh" id="debug-refresh-btn">Refresh</button>
+    </div>
+    <div class="extraction-debug-summary" id="debug-summary"></div>
+    <details class="extraction-debug-details">
+      <summary>Raw extraction JSON</summary>
+      <pre class="extraction-debug-json" id="debug-json"></pre>
+    </details>
+  </section>
+
+  <!-- ── Sign-in Wall (shown when no token) ───────────────── -->
+  <div class="signin-wall" id="signin-wall" style="display:none">
+    <div class="signin-wall-logo">
+      <img src="../icons/logo.svg" width="44" height="44" alt="Hopper" />
+    </div>
+    <div class="signin-wall-title">Sign in to use Hopper</div>
+    <div class="signin-wall-sub">Connect your ineedajob.pro account to track and sync your applications.</div>
+    <button class="signin-wall-google" id="signin-wall-google">
+      <svg width="17" height="17" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908C16.658 14.017 17.64 11.71 17.64 9.2z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.909-2.259c-.806.54-1.837.86-3.047.860-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/></svg>
+      Sign in with Google
+    </button>
+    <div class="signin-wall-divider">
+      <span>already signed in?</span>
+    </div>
+    <button class="signin-wall-connect" id="signin-wall-connect">
+      Connect account →
+    </button>
+    <div class="signin-wall-hint" id="signin-wall-hint">Opens ineedajob.pro — sign in, then click "Connect account".</div>
+  </div>
+
+  <!-- ── Stats Bar ──────────────────────────────────────────── -->
+  <div class="stats-bar">
+    <div class="stat">
+      <span class="stat-value" id="stat-total">0</span>
+      <span class="stat-label">Total</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <span class="stat-value" id="stat-week">0</span>
+      <span class="stat-label">This Week</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <span class="stat-value" id="stat-month">0</span>
+      <span class="stat-label">This Month</span>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <span class="stat-value" id="stat-interviews">0</span>
+      <span class="stat-label">Interviews</span>
+    </div>
+  </div>
+
+  <!-- ── Filter Tabs ────────────────────────────────────────── -->
+  <div class="filter-tabs">
+    <button class="filter-tab active" data-filter="all">All</button>
+    <button class="filter-tab" data-filter="tracked">Tracked</button>
+    <button class="filter-tab" data-filter="applied">Applied</button>
+    <button class="filter-tab" data-filter="screening">Screening</button>
+    <button class="filter-tab" data-filter="interview">Interview</button>
+    <button class="filter-tab" data-filter="offer">Offer</button>
+  </div>
+
+  <!-- ── Search ─────────────────────────────────────────────── -->
+  <div class="search-wrap">
+    <svg class="search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+    <input class="search-input" id="search-input" type="text" placeholder="Search jobs…" />
+  </div>
+
+  <!-- ── Application List ───────────────────────────────────── -->
+  <main class="app-list" id="app-list">
+    <div class="empty-state" id="empty-state">
+      <div class="empty-icon">🎯</div>
+      <div class="empty-title">No applications yet</div>
+      <div class="empty-sub">Apply to a job and Hopper will automatically track it.</div>
+    </div>
+  </main>
+
+  <!-- ── Add Manual Button ──────────────────────────────────── -->
+  <div class="footer">
+    <button class="btn-add-manual" id="btn-add-manual">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+      Add Manually
+    </button>
+  </div>
+
+  <!-- ── Brand Footer ──────────────────────────────────────── -->
+  <div class="brand-footer">
+    a product of <a href="https://ineedajob.pro" target="_blank" rel="noopener">ineedajob.pro</a>
+  </div>
+
+  </div><!-- /.popup-body -->
+
+  <!-- ── Manual Add Modal ───────────────────────────────────── -->
+  <div class="modal-overlay" id="modal" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Add Application</span>
+        <button class="icon-btn" id="modal-close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="field">
+          <label>Job Title *</label>
+          <input type="text" id="m-title" placeholder="e.g. Senior Engineer" />
+        </div>
+        <div class="field">
+          <label>Company *</label>
+          <input type="text" id="m-company" placeholder="e.g. Stripe" />
+        </div>
+        <div class="field">
+          <label>URL</label>
+          <input type="url" id="m-url" placeholder="https://..." />
+        </div>
+        <div class="field">
+          <label>Location</label>
+          <input type="text" id="m-location" placeholder="e.g. Remote, NYC" />
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-track" id="modal-save">Save Application</button>
+      </div>
+      <div class="brand-footer modal-brand-footer">
+        a product of <a href="https://ineedajob.pro" target="_blank" rel="noopener">ineedajob.pro</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="../config.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

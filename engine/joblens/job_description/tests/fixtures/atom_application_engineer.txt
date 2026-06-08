@@ -1,0 +1,35 @@
+Position: Application Engineer
+
+Location: Austin
+
+Who we are: Atom is a global investment platform that unifies industry-leading investment talent with systematic portfolio construction and disciplined risk management. Our technology foundation is composed of advanced proprietary systems that capture and analyze petabytes of data to inform every step of our investment process. At the same time, our live mission control architecture validates millions of check-points and orchestrates around-the-clock trading and operational processes with precision.
+
+Role
+
+The individual will report directly to the CTO and independently own key projects from inception to production. This is an opportunity to join a lean team and have immediate personal impact while learning from industry experts in Technology, Trading, Risk, and many other specializations.
+
+Technologies We Use and Teach:
+
+Primary: Python, JavaScript
+Frontend: React, Material UI
+Infrastructure: Docker, NGINX
+Cloud: AWS stack
+Databases: MSSQL, Redis
+
+Responsibilities:
+
+Own the architecture, implementation, and maintenance of new software applications in close collaboration with Atom's leadership team
+Drive tangible impact through a technology-enabled understanding of usage metrics and user activation
+Master the science of presenting complex data analysis using intuitive, user-friendly visualization techniques
+Grow your software development skills using Functional and Object-Oriented principles
+Work as part of an engineering team to enhance and further optimize a sophisticated suite of complex software systems
+
+Ideal Candidate
+
+2+ years professional software engineering experience
+Bachelor's degree in computer science, engineering, or related field
+Experience with Python, JavaScript, or equivalent languages
+Experience in modern front-end technologies
+Experience with API design and development
+Understanding of software engineering best practices
+Ability to articulate complexity in linear, digestible, audience-appropriate language

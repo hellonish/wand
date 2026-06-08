@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Welcome to Hopper</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="onboarding.css" />
+</head>
+<body>
+
+  <div class="ambient" aria-hidden="true">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+  </div>
+
+  <div class="shell">
+
+    <!-- ═══════════════════════════════════════════════════
+         SLIDE 1 — Brand + Account setup
+    ═══════════════════════════════════════════════════ -->
+    <section class="slide active" id="slide-1">
+      <div class="slide-inner">
+
+        <!-- Left: tracker preview -->
+        <div class="hero-col">
+          <div class="hero-card">
+            <div class="hero-card-header">
+              <img class="hero-logo-img" src="../icons/logo.svg" alt="Hopper" />
+              <div class="hero-card-label">Hopper · Job Tracker</div>
+            </div>
+            <div class="hero-fake-row">
+              <div class="fake-dot fake-dot-green"></div>
+              <div class="fake-text-line" style="width:72%"></div>
+              <div class="fake-badge">Applied</div>
+            </div>
+            <div class="hero-fake-row">
+              <div class="fake-dot fake-dot-amber"></div>
+              <div class="fake-text-line" style="width:58%"></div>
+              <div class="fake-badge fake-badge-amber">Screening</div>
+            </div>
+            <div class="hero-fake-row">
+              <div class="fake-dot fake-dot-blue"></div>
+              <div class="fake-text-line" style="width:65%"></div>
+              <div class="fake-badge fake-badge-blue">Interview</div>
+            </div>
+            <div class="hero-card-footer">
+              <span class="hero-stat"><strong>24</strong> applied</span>
+              <span class="hero-stat"><strong>6</strong> this week</span>
+              <span class="hero-stat"><strong>3</strong> interviews</span>
+            </div>
+          </div>
+
+          <!-- FAB preview — black pill, no tray -->
+          <div class="fab-demo" aria-hidden="true">
+            <div class="fab-demo-btn">
+              <div class="fab-demo-icon">
+                <img src="../icons/logo.svg" width="22" height="22" alt="" />
+              </div>
+              <div class="fab-demo-grip">
+                <div class="fab-demo-sep"></div>
+                <div class="fab-demo-dots">
+                  <span></span><span></span>
+                  <span></span><span></span>
+                  <span></span><span></span>
+                </div>
+              </div>
+            </div>
+            <span class="fab-demo-hint">Appears on job pages</span>
+          </div>
+        </div>
+
+        <!-- Right: copy + account CTA -->
+        <div class="copy-col">
+          <div class="brand-lockup">
+            <img class="brand-logo" src="../icons/logo.svg" alt="Hopper" />
+            <span class="brand-name">Hopper</span>
+            <span class="brand-tag">for Chrome</span>
+          </div>
+
+          <h1 class="headline">
+            Your job search,<br>
+            <span class="gradient-text">handled.</span>
+          </h1>
+
+          <p class="body-text">
+            Hopper sits quietly in your browser and tracks every job you apply to — automatically.
+            No copy-pasting, no spreadsheets.
+          </p>
+
+          <!-- Account requirement -->
+          <div class="account-req">
+            <div class="account-req-icon">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            </div>
+            <div class="account-req-body">
+              <div class="account-req-title">You'll need a free account</div>
+              <div class="account-req-text">
+                Sign in at <strong>ineedajob.pro</strong> to sync applications and run AI-powered analysis.
+              </div>
+            </div>
+          </div>
+
+          <!-- Google button -->
+          <a class="btn-google" id="btn-google-signup" href="#">
+            <svg width="18" height="18" viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg">
+              <path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908C16.658 14.017 17.64 11.71 17.64 9.2z"/>
+              <path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.909-2.259c-.806.54-1.837.86-3.047.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>
+              <path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/>
+              <path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58z"/>
+            </svg>
+            Continue with Google
+          </a>
+
+          <div class="already-row">
+            <span class="already-text">Already have an account?</span>
+            <button class="btn-link" id="next-1">Continue →</button>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════
+         SLIDE 2 — How it works (click banner flow)
+    ═══════════════════════════════════════════════════ -->
+    <section class="slide" id="slide-2">
+      <div class="slide-inner slide-centered">
+        <div class="section-pill">How it works</div>
+        <h2 class="headline-sm">Two clicks. Job logged.</h2>
+        <p class="body-text body-text-center">
+          When you land on a job page, the Hopper button appears on the right edge.
+          Click it — a panel opens where you can log the job or run AI analysis.
+        </p>
+
+        <!-- Banner demo mockup -->
+        <div class="banner-demo">
+          <div class="bd-top-bar"></div>
+          <div class="bd-body">
+            <div class="bd-header">
+              <div class="bd-logo">
+                <img src="../icons/logo.svg" width="20" height="20" alt="" />
+              </div>
+              <div class="bd-meta">
+                <div class="bd-title">Hopper</div>
+                <div class="bd-sub">Job application detected</div>
+              </div>
+              <div class="bd-close">✕</div>
+            </div>
+
+            <div class="bd-badge">
+              <span class="bd-badge-dot"></span>
+              Detected
+            </div>
+
+            <div class="bd-fields">
+              <div class="bd-field">
+                <div class="bd-lbl">JOB TITLE</div>
+                <div class="bd-val">Senior Software Engineer</div>
+              </div>
+              <div class="bd-field">
+                <div class="bd-lbl">COMPANY</div>
+                <div class="bd-val">Stripe</div>
+              </div>
+              <div class="bd-url-strip">
+                <span class="bd-url-icon">↗</span>
+                <span class="bd-url-text">stripe.com/jobs/senior-engineer-123</span>
+              </div>
+            </div>
+
+            <div class="bd-actions">
+              <button class="bd-btn-ghost">Skip</button>
+              <button class="bd-btn-secondary">✦ Analyze</button>
+              <button class="bd-btn-primary">✓ Log It</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step connector -->
+        <div class="mini-steps">
+          <div class="mini-step">
+            <div class="mini-num">1</div>
+            <span>Visit a job page</span>
+          </div>
+          <div class="mini-arrow">→</div>
+          <div class="mini-step">
+            <div class="mini-num">2</div>
+            <span>Click the Hopper button</span>
+          </div>
+          <div class="mini-arrow">→</div>
+          <div class="mini-step">
+            <div class="mini-num">3</div>
+            <span>Log It or Analyze</span>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn-ghost" id="back-2">← Back</button>
+          <button class="btn-primary" id="next-2">Continue →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════
+         SLIDE 3 — Platforms + AI
+    ═══════════════════════════════════════════════════ -->
+    <section class="slide" id="slide-3">
+      <div class="slide-inner slide-centered">
+        <div class="section-pill">Coverage</div>
+        <h2 class="headline-sm">Works where you work.</h2>
+        <p class="body-text body-text-center">
+          Hopper auto-detects job applications across all major ATS platforms
+          and job boards — right out of the box.
+        </p>
+
+        <div class="platforms-wrap">
+          <div class="platform-chip">Greenhouse</div>
+          <div class="platform-chip">Lever</div>
+          <div class="platform-chip">Workday</div>
+          <div class="platform-chip">Ashby</div>
+          <div class="platform-chip">LinkedIn</div>
+          <div class="platform-chip">Indeed</div>
+          <div class="platform-chip">iCIMS</div>
+          <div class="platform-chip">Taleo</div>
+          <div class="platform-chip">BambooHR</div>
+          <div class="platform-chip">SmartRecruiters</div>
+          <div class="platform-chip platform-chip-plus">+ any job page</div>
+        </div>
+
+        <div class="wand-ai-card">
+          <div class="wand-ai-header">
+            <div class="wand-ai-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8L19 13"/><path d="M15 9h.01"/><path d="M17.8 6.2L19 5"/><path d="M13.2 6.2L12 5"/><path d="M13.2 11.8L12 13"/><path d="m3 21 9-9"/></svg>
+            </div>
+            <span class="wand-ai-title">Hopper AI Analysis</span>
+            <span class="wand-ai-badge">New</span>
+          </div>
+          <div class="wand-ai-body">
+            Beyond tracking — hit <strong>✦ Analyze</strong> on any job page and Hopper will score
+            your resume fit, highlight gaps, and suggest exactly what to tailor.
+            All powered by your ineedajob.pro profile.
+          </div>
+          <div class="wand-ai-items">
+            <div class="wand-ai-item">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+              Resume fit score
+            </div>
+            <div class="wand-ai-item">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+              Skill gap analysis
+            </div>
+            <div class="wand-ai-item">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+              Tailoring suggestions
+            </div>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn-ghost" id="back-3">← Back</button>
+          <button class="btn-primary" id="next-3">Almost there →</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══════════════════════════════════════════════════
+         SLIDE 4 — All set
+    ═══════════════════════════════════════════════════ -->
+    <section class="slide" id="slide-4">
+      <div class="slide-inner slide-centered slide-finish">
+
+        <div class="finish-glyph">
+          <img src="../icons/logo.svg" alt="Hopper" class="finish-logo" />
+          <div class="finish-ring finish-ring-1"></div>
+          <div class="finish-ring finish-ring-2"></div>
+        </div>
+
+        <h2 class="headline-sm">You're all set!</h2>
+        <p class="body-text body-text-center" style="max-width:380px">
+          Hopper is now active. Visit any job page — the Hopper button will appear
+          on the right edge whenever it detects an application page.
+        </p>
+
+        <div class="checklist">
+          <div class="check-row">
+            <div class="check-icon check-done">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>
+            </div>
+            <span>Extension installed &amp; active</span>
+          </div>
+          <div class="check-row">
+            <div class="check-icon check-done">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>
+            </div>
+            <span>10+ job platforms supported</span>
+          </div>
+          <div class="check-row">
+            <div class="check-icon check-done">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6L9 17l-5-5"/></svg>
+            </div>
+            <span>Hopper AI analysis ready</span>
+          </div>
+        </div>
+
+        <div class="tip-card">
+          <div class="tip-label">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+            Pro tip
+          </div>
+          <div class="tip-text">
+            Right-click any page and choose <strong>"Show Hopper"</strong> to
+            manually trigger the job logger — even when auto-detection doesn't fire.
+          </div>
+        </div>
+
+        <div class="finish-actions">
+          <button class="btn-primary btn-finish" id="finish-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="M9 12l2 2 4-4"/></svg>
+            Open Hopper Tracker
+          </button>
+          <div class="finish-hint">You can also click the Hopper icon in your toolbar anytime</div>
+        </div>
+
+      </div>
+    </section>
+
+  </div><!-- /.shell -->
+
+  <footer class="progress-footer" id="progress-footer">
+    <div class="progress-track">
+      <div class="progress-fill" id="progress-fill"></div>
+    </div>
+    <nav class="dots" aria-label="Progress">
+      <button class="dot active" data-step="1" aria-label="Step 1: Welcome"></button>
+      <button class="dot" data-step="2" aria-label="Step 2: How it works"></button>
+      <button class="dot" data-step="3" aria-label="Step 3: Coverage"></button>
+      <button class="dot" data-step="4" aria-label="Step 4: All set"></button>
+    </nav>
+    <div class="step-counter" id="step-counter">1 / 4</div>
+  </footer>
+
+  <script src="../config.js"></script>
+  <script src="onboarding.js"></script>
+</body>
+</html>

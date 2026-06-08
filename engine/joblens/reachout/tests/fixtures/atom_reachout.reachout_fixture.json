@@ -1,0 +1,71 @@
+{
+  "input": {
+    "company_name": "Atom Investors",
+    "company_website": "https://atominvestors.com",
+    "target_contact_count": 3,
+    "target_roles": [
+      "Application Engineer",
+      "Software Engineer"
+    ],
+    "location": "Austin",
+    "job_location_country": "United States",
+    "schools": [
+      "Arizona State University"
+    ],
+    "seniority": null,
+    "include_recruiters": true,
+    "include_engineering_leaders": true,
+    "include_peer_engineers": true,
+    "include_school_alumni": true,
+    "allow_former_employees": false,
+    "min_confidence": 0.85
+  },
+  "results_by_query": {
+    "site:linkedin.com/in \"Atom Investors\" \"technical recruiter\"": [
+      {
+        "title": "Jane Carter - Technical Recruiter - Atom Investors | LinkedIn",
+        "url": "https://www.linkedin.com/in/jane-carter-123456",
+        "snippet": "Technical Recruiter at Atom Investors. Austin, Texas Metropolitan Area.",
+        "query": "site:linkedin.com/in \"Atom Investors\" \"technical recruiter\"",
+        "rank": 1,
+        "source": "static_fixture"
+      },
+      {
+        "title": "Atom Investors Jobs | LinkedIn",
+        "url": "https://www.linkedin.com/jobs/atom-investors-jobs",
+        "snippet": "View jobs at Atom Investors.",
+        "query": "site:linkedin.com/in \"Atom Investors\" \"technical recruiter\"",
+        "rank": 2,
+        "source": "static_fixture"
+      }
+    ],
+    "site:linkedin.com/in \"Atom Investors\" \"engineering manager\"": [
+      {
+        "title": "Alex Rivera - Engineering Manager - Atom Investors | LinkedIn",
+        "url": "https://www.linkedin.com/in/alex-rivera-eng",
+        "snippet": "Engineering Manager at Atom Investors. Leads software engineering for investment systems.",
+        "query": "site:linkedin.com/in \"Atom Investors\" \"engineering manager\"",
+        "rank": 1,
+        "source": "static_fixture"
+      }
+    ],
+    "site:linkedin.com/in \"Atom Investors\" \"software engineer\"": [
+      {
+        "title": "Priya Shah - Software Engineer - Atom Investors | LinkedIn",
+        "url": "https://www.linkedin.com/in/priya-shah-dev?trk=public_profile",
+        "snippet": "Software Engineer at Atom Investors working on Python, React, and trading operations tools.",
+        "query": "site:linkedin.com/in \"Atom Investors\" \"software engineer\"",
+        "rank": 1,
+        "source": "static_fixture"
+      },
+      {
+        "title": "Chris Lee - Software Engineer - Other Fund | LinkedIn",
+        "url": "https://www.linkedin.com/in/chris-lee-dev",
+        "snippet": "Software Engineer at Other Fund.",
+        "query": "site:linkedin.com/in \"Atom Investors\" \"software engineer\"",
+        "rank": 2,
+        "source": "static_fixture"
+      }
+    ]
+  }
+}

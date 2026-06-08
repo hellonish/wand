@@ -1,0 +1,49 @@
+# ── Frontend (built separately) ───────────────────────────────────────────────
+frontend/
+
+# ── Python cache ──────────────────────────────────────────────────────────────
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+
+# ── Environment & secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+
+# ── Local databases ───────────────────────────────────────────────────────────
+*.db
+*.db-shm
+*.db-wal
+
+# ── User uploaded files (stored in Supabase in production) ────────────────────
+api/uploads/
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+.gstack/
+
+# ── Dev/test files ────────────────────────────────────────────────────────────
+test_resume.pdf
+*.test.*
+api/tests/
+
+# ── Local scripts & tools ─────────────────────────────────────────────────────
+start_services.sh
+stop_services.sh
+
+# ── Infra config (not needed at runtime) ──────────────────────────────────────
+nginx/
+certbot/
+docker-compose.yml
+
+# ── Docs & misc ───────────────────────────────────────────────────────────────
+docs/
+README.md
+hopper/
+task/
+tasks/
+
+# ── Git ───────────────────────────────────────────────────────────────────────
+.git/
+.gitignore

@@ -1,0 +1,31 @@
+{
+  "input": {
+    "company_name": "Atom Investors",
+    "company_website": null,
+    "target_contact_count": 10,
+    "target_roles": [],
+    "location": null,
+    "job_location_country": null,
+    "schools": [],
+    "seniority": null,
+    "include_recruiters": true,
+    "include_engineering_leaders": true,
+    "include_peer_engineers": true,
+    "include_school_alumni": true,
+    "allow_former_employees": false,
+    "min_confidence": 0.85
+  },
+  "search_plan": {
+    "company_name": null,
+    "company_website": null,
+    "target_personas": [],
+    "queries": [],
+    "negative_filters": [],
+    "search_strategy_notes": []
+  },
+  "raw_results": [],
+  "pre_gated_results": [],
+  "candidates": [],
+  "rejected_results": [],
+  "warnings": []
+}

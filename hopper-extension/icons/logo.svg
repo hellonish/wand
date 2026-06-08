@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">Knight tour logo</title>
+  <desc id="desc">A black rounded-square logo formed by a white geometric knight-tour path.</desc>
+  <defs>
+    <clipPath id="logo-clip">
+      <rect x="16" y="16" width="992" height="992" rx="24" ry="24" />
+    </clipPath>
+  </defs>
+
+  <rect x="16" y="16" width="992" height="992" rx="24" ry="24" fill="#050505" />
+
+  <g clip-path="url(#logo-clip)">
+    <path
+      d="M72 952
+L323.43 826.29
+L574.86 952
+L826.29 826.29
+L952 574.86
+L826.29 323.43
+L952 72
+L700.57 197.71
+L449.14 72
+L197.71 197.71
+L72 449.14
+L197.71 700.57
+L323.43 952
+L72 826.29
+L197.71 574.86
+L72 323.43
+L197.71 72
+L323.43 323.43
+L72 197.71
+L323.43 72
+L574.86 197.71
+L826.29 72
+L952 323.43
+L700.57 449.14
+L826.29 197.71
+L952 449.14
+L826.29 700.57
+L952 952
+L700.57 826.29
+L449.14 952
+L197.71 826.29
+L449.14 700.57
+L574.86 449.14
+L826.29 574.86
+L952 826.29
+L700.57 952
+L574.86 700.57
+L323.43 574.86
+L72 700.57
+L197.71 952
+L449.14 826.29
+L700.57 700.57
+L826.29 952
+L952 700.57
+L700.57 574.86
+L574.86 826.29
+L449.14 574.86
+L197.71 449.14
+L449.14 323.43
+L574.86 72
+L323.43 197.71
+L72 72
+L197.71 323.43
+L449.14 449.14
+L323.43 700.57
+L72 574.86
+L323.43 449.14
+L574.86 574.86
+L700.57 323.43
+L449.14 197.71
+L700.57 72
+L574.86 323.43
+L826.29 449.14
+L952 197.71"
+      fill="none"
+      stroke="#f7f7f2"
+      stroke-width="22"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      shape-rendering="geometricPrecision"
+    />
+  </g>
+
+  <rect x="16" y="16" width="992" height="992" rx="24" ry="24" fill="none" stroke="#ffffff" stroke-opacity="0.16" stroke-width="2" />
+</svg>

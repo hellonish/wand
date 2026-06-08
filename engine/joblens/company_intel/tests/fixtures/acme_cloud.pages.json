@@ -1,0 +1,88 @@
+{
+  "input": {
+    "company_name": "Acme Cloud",
+    "website": "https://acme.example",
+    "max_pages": 4,
+    "include_engineering_posts": true
+  },
+  "pages": [
+    {
+      "url": "https://acme.example",
+      "canonical_url": "https://acme.example",
+      "title": "Acme Cloud - Deploy reliable AI apps",
+      "page_type": "homepage",
+      "text": "Acme Cloud helps engineering teams deploy reliable AI applications on a serverless platform. Our customers use Acme Cloud to ship APIs, background jobs, and data workflows with built-in observability. More than 5,000 developer teams build on Acme Cloud.",
+      "headings": [
+        "Deploy reliable AI apps",
+        "Built for engineering teams"
+      ],
+      "links": [
+        {
+          "url": "https://acme.example/about",
+          "label": "About",
+          "page_type_hint": "about"
+        },
+        {
+          "url": "https://acme.example/engineering",
+          "label": "Engineering Blog",
+          "page_type_hint": "engineering_blog"
+        },
+        {
+          "url": "https://acme.example/careers",
+          "label": "Careers",
+          "page_type_hint": "careers"
+        }
+      ],
+      "fetched_at": "2026-05-23T00:00:00+00:00",
+      "warnings": []
+    },
+    {
+      "url": "https://acme.example/about",
+      "canonical_url": "https://acme.example/about",
+      "title": "About Acme Cloud",
+      "page_type": "about",
+      "text": "Acme Cloud was founded in 2021 to make production cloud infrastructure simple for every software team. The company is distributed across North America and Europe. Our mission is to help developers ship dependable software without managing servers.",
+      "headings": [
+        "About Acme Cloud",
+        "Our mission"
+      ],
+      "links": [],
+      "fetched_at": "2026-05-23T00:00:00+00:00",
+      "warnings": []
+    },
+    {
+      "url": "https://acme.example/engineering",
+      "canonical_url": "https://acme.example/engineering",
+      "title": "Acme Engineering",
+      "page_type": "engineering_blog",
+      "text": "Engineering at Acme Cloud. Recent posts: How we run Postgres connection pooling for serverless workloads; Building our Rust-based edge scheduler; Using OpenTelemetry to debug distributed background jobs. Our engineering teams write TypeScript, Python, Go, and Rust across Kubernetes, AWS, Postgres, Redis, and event-driven systems.",
+      "headings": [
+        "Engineering at Acme Cloud",
+        "Recent posts"
+      ],
+      "links": [
+        {
+          "url": "https://acme.example/engineering/postgres-pooling",
+          "label": "How we run Postgres connection pooling for serverless workloads",
+          "page_type_hint": "blog_post"
+        }
+      ],
+      "fetched_at": "2026-05-23T00:00:00+00:00",
+      "warnings": []
+    },
+    {
+      "url": "https://acme.example/careers",
+      "canonical_url": "https://acme.example/careers",
+      "title": "Careers at Acme Cloud",
+      "page_type": "careers",
+      "text": "We are a distributed engineering team. We value ownership, writing clearly, operational excellence, and customer empathy. Acme Cloud hires remotely across the United States, Canada, and Europe.",
+      "headings": [
+        "Careers at Acme Cloud",
+        "How we work"
+      ],
+      "links": [],
+      "fetched_at": "2026-05-23T00:00:00+00:00",
+      "warnings": []
+    }
+  ]
+}

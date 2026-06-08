@@ -1,0 +1,107 @@
+# Python
+__pycache__/
+*.so
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment variables
+.env
+.env.local
+.env.prod
+.env.staging
+
+# Test outputs
+job_result.json
+profile.json
+profile_data.json
+debug_output.json
+*_result.json
+*_table.json
+cover_letter_*.json
+
+# Logs
+*.log
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Output files from testing
+*_phase1.json
+*_phase2.json
+*_phase3.json
+google_phase*.json
+stripe_phase*.json
+shipday_phase*.json
+
+# Temporary files
+*.tmp
+*.bak
+.gstack/
+
+# SQLite database files — may contain PII and encrypted keys, NEVER commit
+wand.db
+wand.db-shm
+wand.db-wal
+wand.db.bak
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Local upload storage (local dev only — prod uses Supabase Storage)
+api/uploads/*
+!api/uploads/.gitkeep
+
+# Process/pid tracking
+.pids
+
+# Benchmarks
+.benchmarks/
+
+# Claude Code agent worktrees (managed by Claude Code, not for version control)
+.claude/worktrees/
+
+# Next.js build output
+frontend/.next/
+frontend/node_modules/
+
+
+.claude

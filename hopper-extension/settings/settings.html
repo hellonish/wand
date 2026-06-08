@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Hopper — Extension Settings</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="settings.css" />
+</head>
+<body>
+
+  <div class="page">
+
+    <header class="header">
+      <div class="header-left">
+        <img class="header-logo" src="../icons/logo.svg" alt="Hopper" />
+        <div>
+          <div class="app-name">Hopper</div>
+          <div class="app-sub">Extension Settings</div>
+        </div>
+      </div>
+    </header>
+
+    <main class="sections">
+
+      <!-- ── Connection Status ─────────────────────────────────── -->
+      <section class="section banner-section">
+        <div class="connection-card" id="connection-card">
+          <span class="status-dot" id="status-dot"></span>
+          <div class="status-body">
+            <div class="status-title" id="status-title">Checking connection…</div>
+            <div class="status-desc"  id="status-desc">Verifying your Hopper account setup.</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Account ───────────────────────────────────────────── -->
+      <section class="section">
+        <div class="section-title">Account</div>
+
+        <div class="field-group">
+          <div class="field">
+            <label for="wand-token">Authorization Token</label>
+            <div class="token-row">
+              <input type="password" id="wand-token" placeholder="Paste your auth token…" autocomplete="off" />
+              <button class="btn btn-icon" id="toggle-token-vis" title="Show / hide token" aria-label="Toggle visibility">
+                <svg id="eye-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+              <button class="btn btn-secondary" id="sync-token-btn">Auto-sync</button>
+            </div>
+            <div class="field-desc">
+              Your account token. Used to authenticate all requests.
+              Copy it from your <strong>profile → API Token</strong>, or use
+              <em>Auto-sync</em> if ineedajob.pro is open in another tab.
+            </div>
+          </div>
+        </div>
+
+        <div class="integration-actions">
+          <button class="btn btn-secondary" id="test-connection-btn">Test Connection</button>
+          <span class="test-result" id="test-result"></span>
+        </div>
+      </section>
+
+      <!-- ── Detection ─────────────────────────────────────────── -->
+      <section class="section">
+        <div class="section-title">Detection</div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Auto-detect job pages</div>
+            <div class="setting-desc">Automatically show the Hopper button when you land on a supported job application page.</div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="auto-detect" checked />
+            <span class="track"></span>
+          </label>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">
+              Gemini Nano (On-Device AI)
+              <span class="badge badge-opt-in">Opt-in</span>
+            </div>
+            <div class="setting-desc">
+              Use Chrome's built-in on-device AI to extract job details from unrecognized pages.
+              Requires Chrome 138+ with the model downloaded. Fully offline, no cost.
+            </div>
+            <div class="nano-status" id="nano-status"></div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="gemini-nano" />
+            <span class="track"></span>
+          </label>
+        </div>
+      </section>
+
+      <!-- ── Data ──────────────────────────────────────────────── -->
+      <section class="section">
+        <div class="section-title">Data &amp; Cache</div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Local Cache</div>
+            <div class="setting-desc">Jobs are cached locally for fast startup and offline reading. Your ineedajob.pro account remains the source of truth.</div>
+          </div>
+          <div class="storage-info" id="storage-info">Calculating…</div>
+        </div>
+
+        <div class="danger-zone">
+          <button class="btn-danger" id="clear-data">Clear Local Cache</button>
+          <span class="danger-desc">Clears the extension's local copy of jobs. Does not affect your ineedajob.pro account data.</span>
+        </div>
+      </section>
+
+      <!-- ── Developer ─────────────────────────────────────────── -->
+      <section class="section">
+        <div class="section-title">Developer</div>
+
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">
+              Page extraction debug
+              <span class="badge badge-opt-in">Dev</span>
+            </div>
+            <div class="setting-desc">
+              Show the full extraction JSON in the popup and on-page banner.
+              The summary (title, company, JD length) is always visible.
+            </div>
+          </div>
+          <label class="toggle">
+            <input type="checkbox" id="dev-mode" />
+            <span class="track"></span>
+          </label>
+        </div>
+      </section>
+
+      <!-- ── About ─────────────────────────────────────────────── -->
+      <section class="section">
+        <div class="section-title">About</div>
+        <div class="about-row">
+          <span class="about-label">Extension Version</span>
+          <span class="about-value" id="ext-version">1.0.0</span>
+        </div>
+        <div class="about-row">
+          <span class="about-label">Connected to</span>
+          <span class="about-value about-value-mono" id="about-api-url">—</span>
+        </div>
+        <div class="about-row">
+          <span class="about-label">Supported Platforms</span>
+          <span class="about-value">Greenhouse, Lever, Workday, Ashby, iCIMS, Taleo, SmartRecruiters, BambooHR, LinkedIn, Indeed</span>
+        </div>
+      </section>
+
+    </main>
+
+    <footer class="save-bar">
+      <div class="save-status" id="save-status"></div>
+      <button class="btn-save" id="save-btn">Save Settings</button>
+    </footer>
+
+  </div>
+
+  <script src="../config.js"></script>
+  <script src="settings.js"></script>
+</body>
+</html>

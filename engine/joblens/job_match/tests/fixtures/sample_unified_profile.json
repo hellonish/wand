@@ -1,0 +1,95 @@
+{
+  "basics": {
+    "name": "Nishant Sharma",
+    "title": "Full Stack Software Engineer",
+    "summary": "Full-stack engineer building Python, JavaScript, React, and cloud-backed applications with analytics dashboards, APIs, and deployment workflows.",
+    "contact_info": {
+      "email": "nishant@example.com",
+      "phone": null,
+      "linkedin_url": "https://www.linkedin.com/in/nishant-sharma",
+      "portfolio_url": "https://nishant.example.com",
+      "github_url": "https://github.com/nishant"
+    },
+    "location": "Austin, TX"
+  },
+  "work_experience": [
+    {
+      "job_title": "Software Engineer",
+      "company_name": "Wand Labs",
+      "start_date": "2024-01",
+      "end_date": null,
+      "is_current": true,
+      "location": "Austin, TX",
+      "description": [
+        "Built and maintained full-stack React and Python applications with REST APIs and production deployment workflows.",
+        "Designed analytics dashboards that turned operational data into user-friendly visualizations for internal decision-making.",
+        "Owned API design, implementation, testing, and deployment for workflow automation features."
+      ],
+      "achievements": [
+        "Reduced manual review time by automating profile parsing, consistency checks, and structured review outputs."
+      ]
+    }
+  ],
+  "skills": [
+    "Python",
+    "JavaScript",
+    "TypeScript",
+    "React",
+    "Material UI",
+    "AWS",
+    "Docker",
+    "REST APIs",
+    "PostgreSQL",
+    "Redis",
+    "CI/CD",
+    "Data visualization",
+    "Java",
+    "Spring Boot"
+  ],
+  "education": [
+    {
+      "institution": "Arizona State University",
+      "degree": "Bachelor of Science",
+      "major": "Computer Science",
+      "graduation_year": "2024"
+    }
+  ],
+  "dynamic_sections": {
+    "projects": [
+      {
+        "project_name": "Profile Intelligence Platform",
+        "problem": "Needed to ingest resumes, LinkedIn exports, and portfolios into a unified profile.",
+        "tools_methods": [
+          "Python",
+          "React",
+          "TypeScript",
+          "FastAPI",
+          "AWS",
+          "Docker",
+          "CI/CD"
+        ],
+        "outcome": "Shipped a full-stack workflow for parsing profile documents and generating structured JSON review outputs."
+      },
+      {
+        "project_name": "Cloud Job Automation",
+        "problem": "Needed repeatable cloud jobs for document processing and application workflows.",
+        "tools_methods": [
+          "Python",
+          "AWS Lambda",
+          "DynamoDB",
+          "CloudFormation",
+          "GitHub Actions"
+        ],
+        "outcome": "Built serverless processing jobs with infrastructure-as-code and automated deployment."
+      }
+    ],
+    "about": {
+      "domain_context": [
+        "workflow automation",
+        "profile intelligence",
+        "analytics dashboards"
+      ]
+    },
+    "warnings": []
+  }
+}

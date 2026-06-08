@@ -1,0 +1,45 @@
+{
+  "input": {
+    "text": "Sample JD",
+    "source_id": "ltm_full_stack_java_developer"
+  },
+  "breakdown": {
+    "metadata": {
+      "job_title": null,
+      "company_name": null,
+      "location": null,
+      "work_mode": "unspecified",
+      "employment_type": "unspecified",
+      "seniority_level": "unspecified",
+      "years_of_experience_min": null,
+      "years_of_experience_max": null,
+      "posted_at": null,
+      "apply_by": null,
+      "source_phrases": []
+    },
+    "company_context": {
+      "summary": null,
+      "industry": null,
+      "company_stage_or_scale": null,
+      "mission_or_value_signals": [],
+      "product_or_platform_signals": [],
+      "domain_signals": [],
+      "source_phrases": []
+    },
+    "role_classification": {
+      "role_family": null,
+      "primary_track": null,
+      "secondary_tracks": [],
+      "seniority_rationale": null,
+      "source_phrases": []
+    },
+    "primary_skills": [],
+    "secondary_skills": [],
+    "responsibilities": [],
+    "qualifications": [],
+    "constraints": [],
+    "keywords": [],
+    "extraction_notes": []
+  },
+  "warnings": []
+}

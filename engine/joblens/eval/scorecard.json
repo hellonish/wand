@@ -1,0 +1,71 @@
+{
+  "jd_breakdown": {
+    "fixtures_evaluated": 3,
+    "schema_pass_rate": 1.0,
+    "avg_field_recall": 1.0,
+    "avg_primary_skills_recall": 1.0,
+    "avg_responsibilities_recall": 1.0,
+    "per_fixture": [
+      {
+        "fixture": "atom_application_engineer",
+        "schema_valid": true,
+        "schema_error": null,
+        "field_recall": 1.0,
+        "primary_skills_recall": 1.0,
+        "responsibilities_recall": 1.0
+      },
+      {
+        "fixture": "fovus_software_development_engineer",
+        "schema_valid": true,
+        "schema_error": null,
+        "field_recall": 1.0,
+        "primary_skills_recall": 1.0,
+        "responsibilities_recall": 1.0
+      },
+      {
+        "fixture": "ltm_full_stack_java_developer",
+        "schema_valid": true,
+        "schema_error": null,
+        "field_recall": 1.0,
+        "primary_skills_recall": 1.0,
+        "responsibilities_recall": 1.0
+      }
+    ]
+  },
+  "match": {
+    "fixtures_evaluated": 3,
+    "schema_pass_rate": 1.0,
+    "score_in_range_rate": 1.0,
+    "avg_action_count": 0.0,
+    "avg_gap_coverage": 1.0,
+    "per_fixture": [
+      {
+        "fixture": "atom_application_engineer",
+        "schema_valid": true,
+        "schema_error": null,
+        "score_in_range": true,
+        "total_score": 80.0,
+        "action_count": 0,
+        "gap_coverage": 1.0
+      },
+      {
+        "fixture": "fovus_software_development_engineer",
+        "schema_valid": true,
+        "schema_error": null,
+        "score_in_range": true,
+        "total_score": 80.0,
+        "action_count": 0,
+        "gap_coverage": 1.0
+      },
+      {
+        "fixture": "ltm_full_stack_java_developer",
+        "schema_valid": true,
+        "schema_error": null,
+        "score_in_range": true,
+        "total_score": 80.0,
+        "action_count": 0,
+        "gap_coverage": 1.0
+      }
+    ]
+  }
+}

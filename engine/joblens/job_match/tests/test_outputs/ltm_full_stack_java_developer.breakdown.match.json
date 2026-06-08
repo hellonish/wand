@@ -1,0 +1,22 @@
+{
+  "job_title": null,
+  "company_name": null,
+  "role_family": null,
+  "summary": {
+    "total_score": 80.0,
+    "match_band": "good",
+    "headline": "Good",
+    "strongest_matches": [],
+    "biggest_gaps": [],
+    "hard_constraint_summary": null
+  },
+  "score_components": [],
+  "constraints": [],
+  "skill_matches": [],
+  "responsibility_matches": [],
+  "update_actions": [],
+  "replace_actions": [],
+  "delete_actions": [],
+  "selected_actions": [],
+  "warnings": []
+}
