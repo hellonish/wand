@@ -179,4 +179,6 @@ To install locally:
 
 ## License
 
-MIT
+[MIT + Commons Clause](LICENSE)
+
+Free to use, modify, self-host, and distribute for personal or non-commercial purposes. You may not sell this software, offer it as a paid hosted service, or build a commercial product whose value derives substantially from its functionality. See the [LICENSE](LICENSE) file for the full terms.
