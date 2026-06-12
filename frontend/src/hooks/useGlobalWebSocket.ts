@@ -33,7 +33,6 @@ function emitJobLens(sessionId: string, data: Record<string, unknown>) {
 }
 
 export function useGlobalWebSocket() {
-    const { token } = useStore();
     const wsRef      = useRef<WebSocket | null>(null);
     const aliveRef   = useRef(true);   // false after unmount — stops reconnect loop
     const retryDelay = useRef(RECONNECT_BASE_MS);
@@ -41,7 +40,6 @@ export function useGlobalWebSocket() {
     const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
-        if (!token) return;
         aliveRef.current = true;
 
         function clearTimers() {
@@ -52,7 +50,7 @@ export function useGlobalWebSocket() {
         function connect() {
             if (!aliveRef.current) return;
 
-            const ws = new WebSocket(`${WS_URL}/${token}`);
+            const ws = new WebSocket(WS_URL);
             wsRef.current = ws;
 
             ws.onopen = () => {
@@ -115,7 +113,7 @@ export function useGlobalWebSocket() {
                 wsRef.current = null;
             }
         };
-    }, [token]);
+    }, []);
 
     return wsRef;
 }
